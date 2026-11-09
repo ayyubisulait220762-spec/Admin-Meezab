@@ -1,0 +1,28 @@
+MEEZAB LEADS SHEET – THE LAST MANUAL UPDATE (self-updating loader)               10 Nov 2026
+About 5 minutes, on a computer. After this, nobody pastes code into the Sheet again – Claude publishes
+new versions and the Sheet updates itself. Leads, pilgrims, passwords and the app links all stay the same.
+(Do this INSTEAD of v6.1. Skip v6.1.)
+
+1. Open the live "Meezab leads" Google Sheet  >  Extensions  >  Apps Script.
+2. In Code.gs: select ALL the old code (Ctrl+A), delete it, paste ALL of  Meezab-loader.gs , press Save.
+   (It is short, about 220 lines. That is correct – the rest is downloaded automatically.)
+3. At the top choose the function  install  and press  Run.
+   Google asks for permission – press Allow. If it says "Google hasn't verified this app":
+   Advanced  >  Go to (project name)  >  Allow.  (It is your own script.)
+   It asks for: Sheets, send email, connect to the internet, run timers, and Google Drive
+   (Drive is for the passport/visa/ticket copies we planned – asked now so it is never asked again).
+   The log at the bottom must end with:
+   ALL DONE. The Sheet now runs Meezab v6.2 and updates itself from GitHub.
+4. Deploy  >  Manage deployments  >  pencil (Edit)  >  Version: "New version"  >  Deploy.
+   (NEVER "New deployment" – the link must stay the same.)
+5. Open the web-app link in a browser. It must say:  Meezab leads link is working (v6.2)
+6. Close and re-open the Sheet. The Meezab menu now also has "Update now" and "Go back to previous version".
+Done – tell Sulait "Sheet done".
+
+AFTER THIS (nothing to do)
+- When Claude publishes a new version, the Sheet starts using it within about 10 minutes.
+  Basil and Sulait get an email: "Meezab Sheet updated to vX".
+- A new version is used only if it passes a safety check. If not, the Sheet keeps the old one and emails you once.
+- If an update ever causes a problem: Sheet menu  Meezab  >  Go back to previous version  (one tap).
+- The only time Google could ask again is if a future feature needs a new kind of Google permission that
+  is not in the list above (for example Gmail or Calendar). That would be one "Allow" tap – never pasting code.
