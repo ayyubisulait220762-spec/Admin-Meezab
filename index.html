@@ -289,10 +289,22 @@ var FORM = [
   ['Pilgrim', [['Name', 'Full name (as on passport)', 'text', 1], ['Mobile', '10-digit mobile', 'tel'], ['Package', '', 'pkg'], ['Group', 'e.g. Group A / Bus 1', 'text']]],
   ['Flights', [['Going flight', 'e.g. SV 763 Mumbai → Jeddah', 'text'], ['Going date & time', '', 'dt'], ['Airport reporting', 'e.g. Mumbai T2, 3 hours before', 'text'],
                ['Return flight', 'e.g. SV 762 Jeddah → Mumbai', 'text'], ['Return date & time', '', 'dt']]],
-  ['Hotels & rooms', [['Makkah hotel', '', 'text'], ['Room Makkah', '', 'text'], ['Madinah hotel', '', 'text'], ['Room Madinah', '', 'text'],
-                      ['Shifting hotel', '', 'text'], ['Room shifting', '', 'text']]],
+  ['Hotels & rooms', [['Makkah hotel', '', 'hotel'], ['Room Makkah', '', 'text'], ['Madinah hotel', '', 'hotel'], ['Room Madinah', '', 'text'],
+                      ['Shifting hotel', '', 'hotel'], ['Room shifting', '', 'text']]],
   ['Note for pilgrim', [['Note for pilgrim', 'Shown in his My Hajj page', 'area']]]
 ];
+// Hotel lists: these + every hotel already given to a pilgrim. "+ Add new hotel" adds one.
+var HOTELS = {
+  'Makkah hotel': ['Jabal Omar Hilton Convention', 'Jabal Omar Marriott'],
+  'Madinah hotel': ['Manazil Al Sadiq'],
+  'Shifting hotel': ['Shar-E-Mansoor (Aziziya)']
+};
+function hotelList(k, cur) {
+  var seen = {}, out = [];
+  (HOTELS[k] || []).concat((S.pilgrims || []).map(function (p) { return p[k]; }), [cur]).forEach(function (h) {
+    h = String(h || '').trim(); if (h && !seen[h.toLowerCase()]) { seen[h.toLowerCase()] = 1; out.push(h); } });
+  return out.sort(function (a, b) { return a.localeCompare(b); });
+}
 var PKGS = ['Hajj 2027 Long Stay Package', 'Hajj 2027 Signature Package', 'Hajj 2027 Short Package'];
 function editPilgrim(p) {
   var isNew = !p; p = p || {};
@@ -305,6 +317,9 @@ function editPilgrim(p) {
       var k = f[0], v = p[k] || '', id = 'f' + FORM.indexOf(sec) + '_' + sec[1].indexOf(f);
       h += sec[1].length > 1 || k !== sec[0] ? '<label class="lbl" for="' + id + '">' + esc(k) + (f[3] ? ' *' : '') + '</label>' : '';
       if (f[2] === 'pkg') h += '<select id="' + id + '" data-k="' + esc(k) + '"><option value="">Choose…</option>' + PKGS.concat(v && PKGS.indexOf(v) < 0 ? [v] : []).map(function (o) { return '<option' + (o === v ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select>';
+      else if (f[2] === 'hotel') h += '<select id="' + id + '" data-k="' + esc(k) + '" data-hotel="1"><option value="">Choose hotel…</option>' +
+        hotelList(k, v).map(function (o) { return '<option' + (o === v ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') +
+        '<option value="__new">+ Add new hotel…</option></select><input class="hide" id="' + id + 'n" maxlength="120" placeholder="Type the new hotel name" style="margin-top:8px">';
       else if (f[2] === 'dt') h += '<input id="' + id + '" data-k="' + esc(k) + '" type="datetime-local" value="' + esc(toLocal(v)) + '"' + (v && !toLocal(v) ? ' data-raw="' + esc(v) + '"' : '') + '>';
       else if (f[2] === 'area') h += '<textarea id="' + id + '" data-k="' + esc(k) + '" placeholder="' + esc(f[1]) + '" maxlength="500">' + esc(v) + '</textarea>';
       else h += '<input id="' + id + '" data-k="' + esc(k) + '" type="' + (f[2] === 'tel' ? 'tel' : 'text') + '"' + (f[2] === 'tel' ? ' inputmode="numeric" maxlength="14"' : ' maxlength="120"') + ' placeholder="' + esc(f[1]) + '" value="' + esc(f[2] === 'tel' ? mob(p) : v) + '">';
@@ -314,11 +329,15 @@ function editPilgrim(p) {
   if (!isNew) h += '<div class="card tog" id="actT" style="padding:12px 14px"><span>Active (code works)</span><span class="sw' + (p['Active (yes/no)'] !== 'no' ? ' on' : '') + '"></span></div>';
   h += '<div class="err" id="fErr"></div><button class="btn" id="sv">' + (isNew ? 'Add pilgrim & make code' : 'Save changes') + '</button><div style="height:20px"></div>';
   $('#main').innerHTML = h;
+  document.querySelectorAll('select[data-hotel]').forEach(function (sel) {
+    sel.onchange = function () { var n = $('#' + sel.id + 'n'); n.classList.toggle('hide', sel.value !== '__new'); if (sel.value === '__new') n.focus(); };
+  });
   if (!isNew) $('#actT').onclick = function () { $('.sw', this).classList.toggle('on'); };
   $('#sv').onclick = function () {
     var d = { Code: p.Code || '' }, e = $('#fErr');
     document.querySelectorAll('#main [data-k]').forEach(function (el) {
       var k = el.dataset.k, v = el.value.trim();
+      if (el.dataset.hotel && v === '__new') v = $('#' + el.id + 'n').value.trim();
       if (el.type === 'datetime-local') v = v ? fromLocal(v) : (el.dataset.raw || '');
       if (k === 'Mobile') v = v.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
       d[k] = v;
@@ -330,8 +349,10 @@ function editPilgrim(p) {
     api('savePilgrim', { data: d }).then(function (j) {
       if (!j.ok) throw new Error(j.err === 'name' ? 'Name is required.' : 'Not saved.');
       toast(isNew ? 'Added · code ' + j.code : 'Saved');
-      return getPilgrims(true).then(function () { showPilgrim(j.code); });
-    }).catch(function (x) { e.textContent = x.message || 'Not saved – check internet.'; b.disabled = false; b.textContent = isNew ? 'Add pilgrim & make code' : 'Save changes'; });
+      return getPilgrims(true).then(function () {
+        if (!findP(j.code)) throw new Error('The Sheet did not keep this pilgrim. Please update the Sheet script to v6.1.');
+        showPilgrim(j.code); });
+    }).catch(function (x) { e.textContent = (x && x.message && x.message !== 'Failed to fetch') ? x.message : 'Not saved – check internet.'; b.disabled = false; b.textContent = isNew ? 'Add pilgrim & make code' : 'Save changes'; });
   };
 }
 
