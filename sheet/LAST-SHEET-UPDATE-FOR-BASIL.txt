@@ -5,7 +5,7 @@ new versions and the Sheet updates itself. Leads, pilgrims, passwords and the ap
 
 1. Open the live "Meezab leads" Google Sheet  >  Extensions  >  Apps Script.
 2. In Code.gs: select ALL the old code (Ctrl+A), delete it, paste ALL of  Meezab-loader.gs , press Save.
-   (It is short, about 220 lines. That is correct – the rest is downloaded automatically.)
+   (It is short, about 210 lines. That is correct – the rest is downloaded automatically.)
 3. At the top choose the function  install  and press  Run.
    Google asks for permission – press Allow. If it says "Google hasn't verified this app":
    Advanced  >  Go to (project name)  >  Allow.  (It is your own script.)
