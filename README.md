@@ -1,11 +1,10 @@
 # Admin meezab
 
-Private admin app for **Meezab E Rahemat Haj, Umrah & Ziyarat Tours** (for Sulait and Basil only).
+Private admin app (PWA) for **Meezab E Rahemat Haj Tours** – for Sulait and Basil only.
 
-- Add booked Hajj pilgrims and send them their private **My Hajj** code on WhatsApp
-- Tick each pilgrim's checklist (passport, visa, vaccination, instalments …)
-- Send alerts to all pilgrims or one pilgrim (shown in the pilgrim app)
-- See new enquiries (leads)
-
-Data stays in the private Google Sheet; passwords are checked by Google Apps Script and are never stored in this app.
-Pilgrim app: https://ayyubisulait220762-spec.github.io/Meezab-haj-umrah-app/
+- Live: https://ayyubisulait220762-spec.github.io/admin-meezab/
+- Log in with your admin password (set in the "Meezab leads" Sheet: menu Meezab › Set admin password).
+- Screens: Pilgrims (list, add, edit, checklist, send My Hajj code on WhatsApp), Alerts, Leads, Me (log out).
+- Data lives only in the private Google Sheet (Apps Script v6). Nothing is stored in this repo.
+- Preview with sample data: add `?demo` to the link.
+- Install: open the link in Chrome on the phone › menu › "Add to Home screen".

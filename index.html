@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#08070A">
+<meta name="robots" content="noindex,nofollow">
+<title>Admin meezab</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Admin meezab">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#08070A;--card:#131118;--card2:#1B1820;--line:#2A2530;--text:#F3EEE3;--mute:#A49C8C;--g1:#FBEBB5;--g2:#D9B44A;--g3:#A87B28;
+--gold:linear-gradient(135deg,#FBEBB5,#D9B44A 50%,#A87B28);--ok:#5FCB8A;--warn:#E8A23A;--bad:#E26B5B}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--text);font:400 15px/1.45 Outfit,system-ui,sans-serif}
+body{min-height:100vh;padding-bottom:calc(76px + env(safe-area-inset-bottom))}
+button,input,select,textarea{font:inherit;color:inherit}
+.cz{font-family:Cinzel,serif;letter-spacing:.06em}
+.gt{background:var(--gold);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hide{display:none!important}
+header{position:sticky;top:0;z-index:5;background:rgba(8,7,10,.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);
+ padding:calc(12px + env(safe-area-inset-top)) 16px 12px;display:flex;align-items:center;gap:10px}
+header h1{margin:0;font-size:18px;flex:1}
+header .who{font-size:12px;color:var(--mute)}
+.back{background:none;border:0;font-size:22px;padding:0 6px 0 0;color:var(--g2)}
+main{padding:14px 16px}
+.btn{border:0;border-radius:12px;padding:12px 16px;font-weight:600;background:var(--gold);color:#1a1205;width:100%}
+.btn.sec{background:var(--card2);color:var(--text);border:1px solid var(--line)}
+.btn.sm{width:auto;padding:8px 12px;font-size:14px}
+.btn:disabled{opacity:.5}
+.row{display:flex;gap:8px}
+.row>*{flex:1}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:10px}
+.lbl{font-size:12px;color:var(--mute);margin:10px 0 4px;display:block}
+input,select,textarea{width:100%;background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:11px 12px;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--g2)}
+textarea{min-height:90px;resize:vertical}
+h2{font-size:13px;color:var(--g2);text-transform:uppercase;letter-spacing:.1em;margin:18px 0 8px}
+.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin:10px 0}
+.chip{white-space:nowrap;border:1px solid var(--line);background:var(--card);border-radius:20px;padding:6px 12px;font-size:13px;color:var(--mute)}
+.chip.on{background:var(--gold);color:#1a1205;border-color:transparent;font-weight:600}
+.pl{display:flex;align-items:center;gap:12px}
+.av{width:42px;height:42px;border-radius:50%;background:var(--card2);border:1px solid var(--g3);display:grid;place-items:center;font-weight:600;color:var(--g1);flex:none}
+.pl .n{font-weight:600}
+.pl .s{font-size:12px;color:var(--mute)}
+.pl .m{flex:1;min-width:0}
+.pl .m div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar{height:5px;background:var(--card2);border-radius:4px;overflow:hidden;margin-top:6px}
+.bar i{display:block;height:100%;background:var(--gold)}
+.badge{font-size:11px;border-radius:8px;padding:2px 7px;background:var(--card2);color:var(--mute);border:1px solid var(--line)}
+.badge.off{color:var(--bad);border-color:#5a2a25}
+.badge.new{color:var(--g1);border-color:var(--g3)}
+.tog{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--line)}
+.tog:last-child{border:0}
+.sw{width:46px;height:27px;border-radius:20px;background:var(--card2);border:1px solid var(--line);position:relative;flex:none}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;background:var(--mute);transition:.2s}
+.sw.on{background:var(--gold);border-color:transparent}
+.sw.on::after{left:22px;background:#1a1205}
+.code{font-family:ui-monospace,Menlo,monospace;font-size:20px;letter-spacing:.08em;color:var(--g1)}
+.stat{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.stat div{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px;text-align:center}
+.stat b{display:block;font-size:20px;color:var(--g1)}
+.stat span{font-size:11px;color:var(--mute)}
+nav{position:fixed;left:0;right:0;bottom:0;z-index:6;background:rgba(14,12,17,.97);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;background:none;border:0;padding:9px 0 10px;font-size:11px;color:var(--mute);display:flex;flex-direction:column;align-items:center;gap:3px}
+nav button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7}
+nav button.on{color:var(--g2)}
+.fab{position:fixed;right:16px;bottom:calc(88px + env(safe-area-inset-bottom));z-index:6;width:56px;height:56px;border-radius:50%;border:0;background:var(--gold);color:#1a1205;font-size:30px;box-shadow:0 6px 20px rgba(217,180,74,.3)}
+.toast{position:fixed;left:16px;right:16px;bottom:calc(90px + env(safe-area-inset-bottom));z-index:9;background:#221d14;border:1px solid var(--g3);color:var(--g1);border-radius:12px;padding:12px 14px;text-align:center;opacity:0;transform:translateY(10px);transition:.25s;pointer-events:none}
+.toast.on{opacity:1;transform:none}
+.empty{text-align:center;color:var(--mute);padding:40px 10px}
+.err{color:var(--bad);font-size:13px;min-height:18px;margin-top:8px}
+.login{min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:24px 22px;margin-bottom:-76px}
+.logo{width:84px;height:84px;margin:0 auto 14px;border-radius:22px;background:var(--gold);display:grid;place-items:center;color:#1a1205;font:700 34px Cinzel,serif}
+.who2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:22px 0 6px}
+.who2 button{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;font-weight:600}
+.who2 button.on{border-color:var(--g2);color:var(--g1);background:#1d1810}
+.acts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}
+.acts a,.acts button{display:flex;flex-direction:column;align-items:center;gap:4px;background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:10px 4px;font-size:12px;color:var(--text);text-decoration:none}
+.acts svg{width:22px;height:22px;stroke:var(--g2);fill:none;stroke-width:1.7}
+.al .t{font-weight:600}
+.al .x{color:var(--mute);font-size:14px;margin-top:4px;white-space:pre-wrap}
+.al .f{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:12px;color:var(--mute)}
+.spin{width:28px;height:28px;border:3px solid var(--line);border-top-color:var(--g2);border-radius:50%;animation:sp 1s linear infinite;margin:40px auto}
+@keyframes sp{to{transform:rotate(360deg)}}
+.demo{background:#3a2b0b;color:var(--g1);font-size:12px;text-align:center;padding:4px}
+</style>
+</head>
+<body>
+<div id="demoBar" class="demo hide">DEMO – sample data, nothing is saved</div>
+
+<!-- LOGIN -->
+<section id="vLogin" class="login hide">
+  <div class="logo">M</div>
+  <div class="cz gt" style="text-align:center;font-size:24px;font-weight:700">ADMIN MEEZAB</div>
+  <div style="text-align:center;color:var(--mute);font-size:13px;margin-top:4px">Meezab E Rahemat Haj Tours · staff only</div>
+  <div class="who2"><button data-u="sulait">Sulait</button><button data-u="basil">Basil</button></div>
+  <label class="lbl" for="pass">Password</label>
+  <input id="pass" type="password" autocomplete="current-password" placeholder="Your admin password">
+  <div class="err" id="lErr"></div>
+  <button class="btn" id="lBtn" style="margin-top:6px">Log in</button>
+</section>
+
+<!-- APP -->
+<div id="app" class="hide">
+  <header><button class="back hide" id="back" aria-label="Back">‹</button><h1 class="cz gt" id="title">PILGRIMS</h1><span class="who" id="who"></span></header>
+  <main id="main"></main>
+  <button class="fab hide" id="fab" aria-label="Add">+</button>
+  <nav>
+    <button data-t="pilgrims" class="on"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><circle cx="17" cy="9" r="2.6"/><path d="M16 14.6c2.8.1 4.8 1.8 5.4 4.9"/></svg>Pilgrims</button>
+    <button data-t="alerts"><svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>Alerts</button>
+    <button data-t="leads"><svg viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a1.5 1.5 0 0 1-1.6 1.5C10.5 20 4 13.5 3.5 5.6A1.5 1.5 0 0 1 5 4z"/></svg>Leads</button>
+    <button data-t="more"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.5 3.6-5.5 7-5.5s6.2 2 7 5.5"/></svg>Me</button>
+  </nav>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+var API = 'https://script.google.com/macros/s/AKfycbwz1tnt0Ay4pfqbkDEP8bbT5UaT2MndE8VM_oDMoKIesH0aTgjglp_-4yq5G6gvlV0R/exec';
+var APP_LINK = 'https://ayyubisulait220762-spec.github.io/Meezab-haj-umrah-app/';
+var KEY = 'mz_admin_v1';
+var DEMO = /[?&]demo\b/.test(location.search);
+var S = { user: '', token: '', tab: 'pilgrims', pilgrims: null, checks: [], filter: 'all', q: '', leads: null, alerts: null, leadFilter: 'all' };
+var STATUSES = ['New', 'Called', 'Interested', 'Booked', 'Not interested'];
+var NAMES = { sulait: 'Sulait', basil: 'Basil' };
+var $ = function (s, r) { return (r || document).querySelector(s); };
+var esc = function (v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+var yes = function (v) { v = String(v).toLowerCase().trim(); return v === 'yes' || v === 'y' || v === 'true' || v === '✓' || v === 'done'; };
+
+function store(o) { try { if (o) localStorage.setItem(KEY, JSON.stringify(o)); else localStorage.removeItem(KEY); } catch (e) {} }
+function load() { try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { return null; } }
+function toast(m) { var t = $('#toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(function () { t.classList.remove('on'); }, 2400); }
+
+// ---------- server ----------
+function api(action, extra) {
+  var body = Object.assign({ type: 'admin', user: S.user, token: S.token, action: action }, extra || {});
+  if (DEMO) return Promise.resolve(demoApi(body));
+  return fetch(API, { method: 'POST', body: JSON.stringify(body) })
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (!j.ok && j.err === 'login' && action !== 'login') { logout(true); throw new Error('Please log in again'); }
+      return j;
+    });
+}
+
+// ---------- login ----------
+function showLogin() {
+  $('#app').classList.add('hide'); $('#vLogin').classList.remove('hide');
+  var last = (load() || {}).user || 'sulait'; pickUser(last);
+}
+function pickUser(u) {
+  S.user = u;
+  document.querySelectorAll('.who2 button').forEach(function (b) { b.classList.toggle('on', b.dataset.u === u); });
+}
+document.querySelectorAll('.who2 button').forEach(function (b) { b.onclick = function () { pickUser(b.dataset.u); $('#pass').focus(); }; });
+$('#pass').onkeydown = function (e) { if (e.key === 'Enter') doLogin(); };
+$('#lBtn').onclick = doLogin;
+function doLogin() {
+  var p = $('#pass').value, e = $('#lErr'), b = $('#lBtn');
+  if (!p) { e.textContent = 'Type your password.'; return; }
+  b.disabled = true; b.textContent = 'Checking…'; e.textContent = '';
+  api('login', { pass: p }).then(function (j) {
+    if (j.ok) { S.token = j.token; store({ user: S.user, token: j.token }); $('#pass').value = ''; startApp(); return; }
+    e.textContent = j.err === 'locked' ? 'Too many wrong tries. Locked for 15 minutes.'
+      : j.err === 'nopass' ? 'No password set yet. Set it in the Sheet: Meezab > Set admin password.'
+      : 'Wrong password.' + (j.left !== undefined ? ' ' + j.left + ' tries left.' : '');
+  }).catch(function () { e.textContent = 'No connection. Check internet and try again.'; })
+    .then(function () { b.disabled = false; b.textContent = 'Log in'; });
+}
+function logout(silent) {
+  if (!silent && S.token) api('logout').catch(function () {});
+  store({ user: S.user }); S.token = ''; S.pilgrims = S.leads = S.alerts = null;
+  showLogin(); if (silent) toast('Please log in again');
+}
+
+// ---------- shell ----------
+function startApp() {
+  $('#vLogin').classList.add('hide'); $('#app').classList.remove('hide');
+  $('#who').textContent = NAMES[S.user] || S.user;
+  go(S.tab);
+}
+document.querySelectorAll('nav button').forEach(function (b) { b.onclick = function () { go(b.dataset.t); }; });
+function setHead(t, back) {
+  $('#title').textContent = t; $('#back').classList.toggle('hide', !back);
+  $('#back').onclick = back || null; window.scrollTo(0, 0);
+}
+function go(tab) {
+  S.tab = tab;
+  document.querySelectorAll('nav button').forEach(function (b) { b.classList.toggle('on', b.dataset.t === tab); });
+  $('#fab').classList.toggle('hide', tab !== 'pilgrims');
+  $('#fab').onclick = function () { editPilgrim(null); };
+  ({ pilgrims: pilgrimsView, alerts: alertsView, leads: leadsView, more: moreView })[tab]();
+}
+function spin() { $('#main').innerHTML = '<div class="spin"></div>'; }
+function fail(e) { $('#main').innerHTML = '<div class="empty">Could not load.<br>' + esc(e.message || 'Check internet') + '<br><br><button class="btn sm sec" onclick="go(S.tab)">Try again</button></div>'; }
+
+// ---------- pilgrims ----------
+function getPilgrims(force) {
+  if (S.pilgrims && !force) return Promise.resolve(S.pilgrims);
+  return api('pilgrims').then(function (j) { if (!j.ok) throw new Error(j.err); S.pilgrims = j.list; S.checks = j.checks; return j.list; });
+}
+function doneCount(p) { return S.checks.filter(function (c) { return yes(p[c]); }).length; }
+function pilgrimsView() {
+  setHead('PILGRIMS'); spin();
+  getPilgrims().then(renderPilgrims).catch(fail);
+}
+function renderPilgrims() {
+  var all = S.pilgrims, active = all.filter(function (p) { return p['Active (yes/no)'] !== 'no'; });
+  var pend = active.filter(function (p) { return doneCount(p) < S.checks.length; });
+  var groups = {}; active.forEach(function (p) { if (p.Group) groups[p.Group] = 1; });
+  var f = S.filter, q = S.q.toLowerCase();
+  var list = (f === 'off' ? all.filter(function (p) { return p['Active (yes/no)'] === 'no'; }) : f === 'pending' ? pend : f.indexOf('g:') === 0 ? active.filter(function (p) { return p.Group === f.slice(2); }) : active)
+    .filter(function (p) { return !q || (p.Name + ' ' + p.Code + ' ' + p.Mobile + ' ' + p.Group).toLowerCase().indexOf(q) >= 0; });
+  var chips = [['all', 'All'], ['pending', 'Pending'], ['off', 'Turned off']].concat(Object.keys(groups).sort().map(function (g) { return ['g:' + g, g]; }));
+  $('#main').innerHTML =
+    '<div class="stat"><div><b>' + active.length + '</b><span>Pilgrims</span></div><div><b>' + (active.length - pend.length) + '</b><span>All ready</span></div><div><b>' + pend.length + '</b><span>Pending</span></div></div>' +
+    '<input id="q" type="search" placeholder="Search name, code, mobile" value="' + esc(S.q) + '">' +
+    '<div class="chips">' + chips.map(function (c) { return '<button class="chip' + (f === c[0] ? ' on' : '') + '" data-f="' + esc(c[0]) + '">' + esc(c[1]) + '</button>'; }).join('') + '</div>' +
+    (list.length ? list.map(function (p) {
+      var d = doneCount(p), n = S.checks.length || 8;
+      return '<div class="card pl" data-c="' + esc(p.Code) + '"><div class="av">' + esc((p.Name || '?').trim().charAt(0).toUpperCase()) + '</div>' +
+        '<div class="m"><div class="n">' + esc(p.Name) + '</div><div class="s">' + esc(p.Code) + (p.Group ? ' · ' + esc(p.Group) : '') + '</div>' +
+        '<div class="bar"><i style="width:' + Math.round(d / n * 100) + '%"></i></div></div>' +
+        '<div style="text-align:right">' + (p['Active (yes/no)'] === 'no' ? '<span class="badge off">Off</span>' : '<span class="s" style="font-size:12px;color:var(--mute)">' + d + '/' + n + '</span>') + '</div></div>';
+    }).join('') : '<div class="empty">' + (all.length ? 'No pilgrim matches.' : 'No pilgrims yet.<br>Tap + to add the first one.') + '</div>');
+  var qi = $('#q'); qi.oninput = function () { S.q = qi.value; var pos = qi.selectionStart; renderPilgrims(); var n = $('#q'); n.focus(); n.setSelectionRange(pos, pos); };
+  document.querySelectorAll('.chip').forEach(function (c) { c.onclick = function () { S.filter = c.dataset.f; renderPilgrims(); }; });
+  document.querySelectorAll('.pl[data-c]').forEach(function (c) { c.onclick = function () { showPilgrim(c.dataset.c); }; });
+}
+function findP(code) { return (S.pilgrims || []).filter(function (p) { return p.Code === code; })[0]; }
+function waCodeMsg(p) {
+  return 'Assalamu Alaikum ' + p.Name + ', your Meezab My Hajj code is ' + p.Code + '. Open the app → My Hajj: ' + APP_LINK;
+}
+function mob(p) { var m = String(p.Mobile || '').replace(/\D/g, ''); if (m.length === 12 && m.indexOf('91') === 0) m = m.slice(2); return m; }
+function showPilgrim(code) {
+  var p = findP(code); if (!p) return go('pilgrims');
+  $('#fab').classList.add('hide');
+  setHead('PILGRIM', function () { go('pilgrims'); });
+  var m = mob(p), row = function (k, v) { return v ? '<div class="tog" style="padding:8px 0"><span style="color:var(--mute);font-size:13px">' + k + '</span><span style="text-align:right">' + esc(v) + '</span></div>' : ''; };
+  var off = p['Active (yes/no)'] === 'no';
+  $('#main').innerHTML =
+    '<div class="card" style="text-align:center"><div class="av" style="margin:0 auto 8px;width:58px;height:58px;font-size:22px">' + esc(p.Name.charAt(0).toUpperCase()) + '</div>' +
+    '<div style="font-size:19px;font-weight:600">' + esc(p.Name) + '</div><div style="color:var(--mute);font-size:13px">' + esc([p.Package, p.Group].filter(Boolean).join(' · ')) + '</div>' +
+    '<div class="code" style="margin-top:10px">' + esc(p.Code) + '</div>' + (off ? '<div style="margin-top:6px"><span class="badge off">Turned off – code does not work</span></div>' : '') +
+    '<div class="acts">' +
+      (m ? '<a href="https://wa.me/91' + m + '?text=' + encodeURIComponent(waCodeMsg(p)) + '" target="_blank" rel="noopener"><svg viewBox="0 0 24 24"><path d="M4 20l1.2-4A8 8 0 1 1 8 18.8z"/><path d="M9 9.5c.3 2 2.5 4.3 4.6 4.6l1-1.2 1.9.9c-.3 1-1.1 1.7-2.2 1.6C11 15 8.9 12.9 8.5 9.6 8.4 8.6 9.1 7.8 10 7.6l.9 1.9z"/></svg>Send code</a>' +
+             '<a href="tel:+91' + m + '"><svg viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a1.5 1.5 0 0 1-1.6 1.5C10.5 20 4 13.5 3.5 5.6A1.5 1.5 0 0 1 5 4z"/></svg>Call</a>' : '') +
+      '<button id="eBtn"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>Edit</button>' +
+    '</div></div>' +
+    '<h2>Checklist · tap to change</h2><div class="card" id="cl">' + S.checks.map(function (c) {
+      return '<div class="tog" data-k="' + esc(c) + '"><span>' + esc(c) + '</span><span class="sw' + (yes(p[c]) ? ' on' : '') + '"></span></div>'; }).join('') + '</div>' +
+    '<h2>Flights</h2><div class="card">' + (row('Going flight', p['Going flight']) + row('Going', p['Going date & time']) + row('Airport reporting', p['Airport reporting']) + row('Return flight', p['Return flight']) + row('Return', p['Return date & time']) || '<span style="color:var(--mute)">Not added yet</span>') + '</div>' +
+    '<h2>Hotels & rooms</h2><div class="card">' + (row('Makkah', p['Makkah hotel']) + row('Room Makkah', p['Room Makkah']) + row('Madinah', p['Madinah hotel']) + row('Room Madinah', p['Room Madinah']) + row('Shifting', p['Shifting hotel']) + row('Room shifting', p['Room shifting']) || '<span style="color:var(--mute)">Not added yet</span>') + '</div>' +
+    (p['Note for pilgrim'] ? '<h2>Note for pilgrim</h2><div class="card" style="white-space:pre-wrap">' + esc(p['Note for pilgrim']) + '</div>' : '') +
+    '<button class="btn sec" id="msgBtn" style="margin-top:6px">Send alert to this pilgrim</button>' +
+    '<div style="font-size:12px;color:var(--mute);text-align:center;margin:14px 0">Added by ' + esc(NAMES[p['Added by']] || p['Added by']) + ' · ' + esc(p['Added on']) + (p['Updated on'] ? '<br>Updated by ' + esc(NAMES[p['Updated by']] || p['Updated by']) + ' · ' + esc(p['Updated on']) : '') + '</div>';
+  $('#eBtn').onclick = function () { editPilgrim(p); };
+  $('#msgBtn').onclick = function () { composeAlert(p.Code); };
+  document.querySelectorAll('#cl .tog').forEach(function (t) {
+    t.onclick = function () {
+      var k = t.dataset.k, sw = $('.sw', t), nv = !sw.classList.contains('on');
+      sw.classList.toggle('on', nv);
+      var d = { Code: p.Code, Name: p.Name }; d[k] = nv ? 'yes' : '';
+      api('savePilgrim', { data: d }).then(function (j) {
+        if (!j.ok) throw new Error(); p[k] = nv ? 'yes' : ''; toast(k + (nv ? ' ✓ done' : ' – pending'));
+      }).catch(function () { sw.classList.toggle('on', !nv); toast('Not saved – check internet'); });
+    };
+  });
+}
+
+// date text from the sheet ("12 May 2027, 10:30 am") <-> datetime-local ("2027-05-12T10:30")
+var MON = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+function toLocal(s) {
+  var m = /(\d{1,2}) (\w{3})\w* (\d{4}),? (\d{1,2}):(\d{2}) ?([ap]m)?/i.exec(s || ''); if (!m) return '';
+  var h = +m[4]; if (m[6]) { h = h % 12 + (m[6].toLowerCase() === 'pm' ? 12 : 0); }
+  var mo = MON.indexOf(m[2].toLowerCase()) + 1; if (!mo) return '';
+  var z = function (n) { return ('0' + n).slice(-2); };
+  return m[3] + '-' + z(mo) + '-' + z(m[1]) + 'T' + z(h) + ':' + m[5];
+}
+function fromLocal(v) { return v ? v.replace('T', ' ') : ''; }
+
+var FORM = [
+  ['Pilgrim', [['Name', 'Full name (as on passport)', 'text', 1], ['Mobile', '10-digit mobile', 'tel'], ['Package', '', 'pkg'], ['Group', 'e.g. Group A / Bus 1', 'text']]],
+  ['Flights', [['Going flight', 'e.g. SV 763 Mumbai → Jeddah', 'text'], ['Going date & time', '', 'dt'], ['Airport reporting', 'e.g. Mumbai T2, 3 hours before', 'text'],
+               ['Return flight', 'e.g. SV 762 Jeddah → Mumbai', 'text'], ['Return date & time', '', 'dt']]],
+  ['Hotels & rooms', [['Makkah hotel', '', 'text'], ['Room Makkah', '', 'text'], ['Madinah hotel', '', 'text'], ['Room Madinah', '', 'text'],
+                      ['Shifting hotel', '', 'text'], ['Room shifting', '', 'text']]],
+  ['Note for pilgrim', [['Note for pilgrim', 'Shown in his My Hajj page', 'area']]]
+];
+var PKGS = ['Hajj 2027 Long Stay Package', 'Hajj 2027 Signature Package', 'Hajj 2027 Short Package'];
+function editPilgrim(p) {
+  var isNew = !p; p = p || {};
+  $('#fab').classList.add('hide');
+  setHead(isNew ? 'ADD PILGRIM' : 'EDIT', function () { isNew ? go('pilgrims') : showPilgrim(p.Code); });
+  var h = '';
+  FORM.forEach(function (sec) {
+    h += '<h2>' + sec[0] + '</h2><div class="card">';
+    sec[1].forEach(function (f) {
+      var k = f[0], v = p[k] || '', id = 'f' + FORM.indexOf(sec) + '_' + sec[1].indexOf(f);
+      h += sec[1].length > 1 || k !== sec[0] ? '<label class="lbl" for="' + id + '">' + esc(k) + (f[3] ? ' *' : '') + '</label>' : '';
+      if (f[2] === 'pkg') h += '<select id="' + id + '" data-k="' + esc(k) + '"><option value="">Choose…</option>' + PKGS.concat(v && PKGS.indexOf(v) < 0 ? [v] : []).map(function (o) { return '<option' + (o === v ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select>';
+      else if (f[2] === 'dt') h += '<input id="' + id + '" data-k="' + esc(k) + '" type="datetime-local" value="' + esc(toLocal(v)) + '"' + (v && !toLocal(v) ? ' data-raw="' + esc(v) + '"' : '') + '>';
+      else if (f[2] === 'area') h += '<textarea id="' + id + '" data-k="' + esc(k) + '" placeholder="' + esc(f[1]) + '" maxlength="500">' + esc(v) + '</textarea>';
+      else h += '<input id="' + id + '" data-k="' + esc(k) + '" type="' + (f[2] === 'tel' ? 'tel' : 'text') + '"' + (f[2] === 'tel' ? ' inputmode="numeric" maxlength="14"' : ' maxlength="120"') + ' placeholder="' + esc(f[1]) + '" value="' + esc(f[2] === 'tel' ? mob(p) : v) + '">';
+    });
+    h += '</div>';
+  });
+  if (!isNew) h += '<div class="card tog" id="actT" style="padding:12px 14px"><span>Active (code works)</span><span class="sw' + (p['Active (yes/no)'] !== 'no' ? ' on' : '') + '"></span></div>';
+  h += '<div class="err" id="fErr"></div><button class="btn" id="sv">' + (isNew ? 'Add pilgrim & make code' : 'Save changes') + '</button><div style="height:20px"></div>';
+  $('#main').innerHTML = h;
+  if (!isNew) $('#actT').onclick = function () { $('.sw', this).classList.toggle('on'); };
+  $('#sv').onclick = function () {
+    var d = { Code: p.Code || '' }, e = $('#fErr');
+    document.querySelectorAll('#main [data-k]').forEach(function (el) {
+      var k = el.dataset.k, v = el.value.trim();
+      if (el.type === 'datetime-local') v = v ? fromLocal(v) : (el.dataset.raw || '');
+      if (k === 'Mobile') v = v.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
+      d[k] = v;
+    });
+    if (!d.Name) { e.textContent = 'Name is required.'; return; }
+    if (d.Mobile && !/^[6-9]\d{9}$/.test(d.Mobile)) { e.textContent = 'Mobile must be 10 digits.'; return; }
+    if (!isNew) d['Active (yes/no)'] = $('#actT .sw').classList.contains('on') ? 'yes' : 'no';
+    var b = this; b.disabled = true; b.textContent = 'Saving…'; e.textContent = '';
+    api('savePilgrim', { data: d }).then(function (j) {
+      if (!j.ok) throw new Error(j.err === 'name' ? 'Name is required.' : 'Not saved.');
+      toast(isNew ? 'Added · code ' + j.code : 'Saved');
+      return getPilgrims(true).then(function () { showPilgrim(j.code); });
+    }).catch(function (x) { e.textContent = x.message || 'Not saved – check internet.'; b.disabled = false; b.textContent = isNew ? 'Add pilgrim & make code' : 'Save changes'; });
+  };
+}
+
+// ---------- alerts ----------
+function alertsView() {
+  setHead('ALERTS'); spin();
+  api('alerts').then(function (j) {
+    if (!j.ok) throw new Error(j.err); S.alerts = j.list;
+    var names = {}; (S.pilgrims || []).forEach(function (p) { names[p.Code] = p.Name; });
+    $('#main').innerHTML = '<button class="btn" id="newA">New alert</button><h2>Sent alerts</h2>' +
+      (j.list.length ? j.list.map(function (a) {
+        var on = yes(a.show || 'yes');
+        return '<div class="card al" style="' + (on ? '' : 'opacity:.55') + '"><div class="t">' + esc(a.title || '(no title)') + '</div><div class="x">' + esc(a.text) + '</div>' +
+          '<div class="f"><span>' + (a.to === 'all' ? '<span class="badge new">All pilgrims</span>' : '<span class="badge">' + esc(names[a.to] || a.to) + '</span>') + ' · ' + esc(a.time) + ' · ' + esc(NAMES[a.by] || a.by) + '</span>' +
+          '<button class="btn sm sec" data-r="' + a.row + '" data-s="' + (on ? 'no' : 'yes') + '">' + (on ? 'Hide' : 'Show') + '</button></div></div>';
+      }).join('') : '<div class="empty">No alerts sent yet.</div>');
+    $('#newA').onclick = function () { composeAlert('all'); };
+    document.querySelectorAll('[data-r]').forEach(function (b) {
+      b.onclick = function () { b.disabled = true; api('hideAlert', { data: { row: +b.dataset.r, show: b.dataset.s } }).then(function () { toast(b.dataset.s === 'yes' ? 'Shown to pilgrims' : 'Hidden from pilgrims'); alertsView(); }).catch(function () { b.disabled = false; toast('Not saved'); }); };
+    });
+  }).catch(fail);
+}
+function composeAlert(to) {
+  $('#fab').classList.add('hide');
+  document.querySelectorAll('nav button').forEach(function (b) { b.classList.toggle('on', b.dataset.t === 'alerts'); });
+  setHead('NEW ALERT', function () { go('alerts'); });
+  getPilgrims().then(function (list) {
+    var act = list.filter(function (p) { return p['Active (yes/no)'] !== 'no'; });
+    $('#main').innerHTML = '<div class="card"><label class="lbl" for="aTo">Send to</label><select id="aTo"><option value="all">All pilgrims (' + act.length + ')</option>' +
+      act.map(function (p) { return '<option value="' + esc(p.Code) + '"' + (p.Code === to ? ' selected' : '') + '>' + esc(p.Name) + ' – ' + esc(p.Code) + '</option>'; }).join('') + '</select>' +
+      '<label class="lbl" for="aT">Title</label><input id="aT" maxlength="120" placeholder="e.g. Bus leaves for Mina at 9 pm">' +
+      '<label class="lbl" for="aX">Message</label><textarea id="aX" maxlength="800" placeholder="Write in English. Pilgrims also see it in Urdu, Hindi and Gujarati."></textarea></div>' +
+      '<div class="err" id="aErr"></div><button class="btn" id="aSend">Send alert</button>';
+    $('#aSend').onclick = function () {
+      var d = { to: $('#aTo').value, title: $('#aT').value.trim(), text: $('#aX').value.trim() }, b = this;
+      if (!d.text) { $('#aErr').textContent = 'Write the message.'; return; }
+      b.disabled = true; b.textContent = 'Sending & translating…';
+      api('sendAlert', { data: d }).then(function (j) { if (!j.ok) throw new Error(); toast('Alert sent'); go('alerts'); })
+        .catch(function () { $('#aErr').textContent = 'Not sent – check internet.'; b.disabled = false; b.textContent = 'Send alert'; });
+    };
+  }).catch(fail);
+}
+
+// ---------- leads ----------
+function leadsView() {
+  setHead('LEADS'); spin();
+  api('leads').then(function (j) { if (!j.ok) throw new Error(j.err); S.leads = j.list; renderLeads(); }).catch(fail);
+}
+function renderLeads() {
+  var f = S.leadFilter, list = S.leads.filter(function (l) { return f === 'all' || (l.Status || 'New') === f; });
+  var cnt = function (s) { return S.leads.filter(function (l) { return (l.Status || 'New') === s; }).length; };
+  $('#main').innerHTML = '<div class="chips">' + [['all', 'All ' + S.leads.length]].concat(STATUSES.map(function (s) { return [s, s + ' ' + cnt(s)]; })).map(function (c) {
+      return '<button class="chip' + (f === c[0] ? ' on' : '') + '" data-f="' + esc(c[0]) + '">' + esc(c[1]) + '</button>'; }).join('') + '</div>' +
+    (list.length ? list.map(function (l) {
+      var m = String(l.Mobile || '').replace(/\D/g, ''), st = l.Status || 'New';
+      return '<div class="card"><div class="pl"><div class="m"><div class="n">' + esc(l.Name) + (st === 'New' ? ' <span class="badge new">New</span>' : '') + '</div>' +
+        '<div class="s">' + esc([l.City, l['Package interest'], l.Travellers ? l.Travellers + ' traveller' + (l.Travellers == 1 ? '' : 's') : ''].filter(Boolean).join(' · ')) + '</div>' +
+        '<div class="s">' + esc(l.Time) + (l['Best time to call'] ? ' · call: ' + esc(l['Best time to call']) : '') + (l.Language ? ' · ' + esc(l.Language) : '') + '</div></div></div>' +
+        '<div class="row" style="margin-top:10px"><a class="btn sm sec" style="text-align:center;text-decoration:none" href="tel:+91' + m + '">Call</a>' +
+        '<a class="btn sm sec" style="text-align:center;text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/91' + m + '">WhatsApp</a>' +
+        '<select data-row="' + l.row + '" style="padding:8px">' + STATUSES.map(function (s) { return '<option' + (s === st ? ' selected' : '') + '>' + s + '</option>'; }).join('') + '</select></div></div>';
+    }).join('') : '<div class="empty">No leads here.</div>');
+  document.querySelectorAll('.chip').forEach(function (c) { c.onclick = function () { S.leadFilter = c.dataset.f; renderLeads(); }; });
+  document.querySelectorAll('select[data-row]').forEach(function (s) {
+    s.onchange = function () {
+      var row = +s.dataset.row, v = s.value;
+      api('leadStatus', { data: { row: row, status: v } }).then(function (j) {
+        if (!j.ok) throw new Error(); S.leads.forEach(function (l) { if (l.row === row) l.Status = v; }); toast('Status: ' + v);
+      }).catch(function () { toast('Not saved – check internet'); });
+    };
+  });
+}
+
+// ---------- me ----------
+function moreView() {
+  setHead('ME');
+  $('#main').innerHTML = '<div class="card" style="text-align:center"><div class="logo" style="width:64px;height:64px;font-size:26px">' + esc((NAMES[S.user] || '?').charAt(0)) + '</div>' +
+    '<div style="font-size:18px;font-weight:600">' + esc(NAMES[S.user] || S.user) + '</div><div style="color:var(--mute);font-size:13px">Logged in on this phone for 30 days</div></div>' +
+    '<a class="btn sec" style="display:block;text-align:center;text-decoration:none;margin-bottom:10px" href="' + APP_LINK + '" target="_blank" rel="noopener">Open pilgrim app</a>' +
+    '<button class="btn sec" id="lo">Log out of this phone</button>' +
+    '<p style="color:var(--mute);font-size:12px;text-align:center;margin-top:18px">Lost phone? In the Sheet: Meezab › Log out all admin phones.<br>Admin meezab · v1</p>';
+  $('#lo').onclick = function () { logout(false); };
+}
+
+// ---------- demo data (open with ?demo) ----------
+function demoApi(b) {
+  var D = demoApi.d || (demoApi.d = {
+    checks: ['Passport', 'Visa', 'Vaccination', 'Photos', 'Ihram & kit', 'Advance paid', '2nd instalment', 'Balance paid'],
+    list: [
+      ['MZB-7K4Q-2P', 'Abdul Rahman Ansari', '9823012345', 'Group A', [1, 1, 1, 1, 1, 1, 1, 1]],
+      ['MZB-H3WD-9X', 'Ayesha Begum Ansari', '9823012346', 'Group A', [1, 1, 1, 1, 0, 1, 1, 0]],
+      ['MZB-QN8T-4F', 'Mohammed Irfan Shaikh', '9890456712', 'Group A', [1, 0, 1, 1, 0, 1, 0, 0]],
+      ['MZB-2RVE-7M', 'Shabana Parveen', '9765123498', 'Group B', [1, 1, 0, 1, 0, 1, 1, 0]],
+      ['MZB-YC5K-3S', 'Haji Nisar Ahmed Momin', '9422318877', 'Group B', [1, 1, 1, 1, 1, 1, 1, 1]],
+      ['MZB-P6JA-8B', 'Rukhsana Khatoon', '8806654321', 'Group B', [1, 0, 0, 0, 0, 1, 0, 0]]
+    ].map(function (r, i) {
+      var o = { Code: r[0], 'Active (yes/no)': 'yes', Name: r[1], Mobile: r[2], Package: 'Hajj 2027 Signature Package', Group: r[3],
+        'Going flight': 'SV 763 Mumbai → Jeddah', 'Going date & time': '12 May 2027, 10:30 am', 'Return flight': 'SV 762 Jeddah → Mumbai',
+        'Return date & time': '24 Jun 2027, 4:15 pm', 'Airport reporting': 'Mumbai T2 – 4 hours before', 'Makkah hotel': 'Swissôtel Al Maqam',
+        'Madinah hotel': 'Pullman Zamzam Madinah', 'Shifting hotel': 'Aziziyah Building 14', 'Room Makkah': '1204', 'Room Madinah': '807', 'Room shifting': '3B',
+        'Note for pilgrim': i === 0 ? 'Bring 2 extra passport photos to the office by 20 April.' : '', 'Added by': i % 2 ? 'basil' : 'sulait', 'Added on': '10 Nov 2026, 1:15 am', 'Updated by': '', 'Updated on': '' };
+      o['Updated on'] = '';
+      ['Passport', 'Visa', 'Vaccination', 'Photos', 'Ihram & kit', 'Advance paid', '2nd instalment', 'Balance paid'].forEach(function (c, j) { o[c] = r[4][j] ? 'yes' : ''; });
+      return o;
+    }),
+    alerts: [{ row: 3, time: '9 Nov 2026, 8:10 pm', to: 'all', title: 'Vaccination camp on Sunday', text: 'Meningitis vaccination at Meezab office, Sunday 10 am – 1 pm. Bring Aadhaar and passport copy.', show: 'yes', by: 'basil' },
+             { row: 2, time: '8 Nov 2026, 6:00 pm', to: 'MZB-QN8T-4F', title: 'Visa photo needed', text: 'Please send one white-background photo on WhatsApp.', show: 'yes', by: 'sulait' }],
+    leads: [{ row: 9, Time: '10 Nov 2026, 12:41 am', Name: 'Shakeel Ahmed', Mobile: '9822001122', City: 'Malegaon', 'Package interest': 'Hajj 2027 Signature Package', Travellers: '2', 'Best time to call': 'Evening', Language: 'Urdu', Status: 'New' },
+            { row: 8, Time: '9 Nov 2026, 7:02 pm', Name: 'Farzana Shaikh', Mobile: '9765400112', City: 'Dhule', 'Package interest': 'Hajj 2027 Long Stay Package', Travellers: '4', 'Best time to call': 'Morning', Language: 'Hindi', Status: 'Called' },
+            { row: 7, Time: '8 Nov 2026, 11:20 am', Name: 'Imran Patel', Mobile: '9890011223', City: 'Nashik', 'Package interest': 'Umrah', Travellers: '1', 'Best time to call': 'Any time', Language: 'English', Status: 'Interested' }]
+  });
+  switch (b.action) {
+    case 'login': return { ok: true, token: 'demo', user: b.user };
+    case 'pilgrims': return { ok: true, checks: D.checks, list: D.list };
+    case 'alerts': return { ok: true, list: D.alerts };
+    case 'leads': return { ok: true, list: D.leads };
+    case 'savePilgrim': { var c = b.data.Code || 'MZB-NEW1-23'; var p = D.list.filter(function (x) { return x.Code === c; })[0];
+      if (!p) { p = { Code: c, 'Active (yes/no)': 'yes', 'Added by': b.user, 'Added on': 'now' }; D.list.unshift(p); }
+      Object.keys(b.data).forEach(function (k) { if (k !== 'Code') p[k] = b.data[k]; }); return { ok: true, code: c }; }
+    default: return { ok: true };
+  }
+}
+
+// ---------- start ----------
+(function () {
+  if (DEMO) $('#demoBar').classList.remove('hide');
+  var s = load();
+  if (s && s.token) { S.user = s.user; S.token = s.token; startApp(); } else showLogin();
+  if ('serviceWorker' in navigator && !DEMO) navigator.serviceWorker.register('sw.js').catch(function () {});
+})();
+</script>
+</body>
+</html>
