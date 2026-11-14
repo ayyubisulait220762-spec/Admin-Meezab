@@ -227,7 +227,7 @@ function renderPilgrims() {
   var groups = {}; active.forEach(function (p) { if (p.Group) groups[p.Group] = 1; });
   var f = S.filter, q = S.q.toLowerCase();
   var list = (f === 'off' ? all.filter(function (p) { return p['Active (yes/no)'] === 'no'; }) : f === 'pending' ? pend : f.indexOf('g:') === 0 ? active.filter(function (p) { return p.Group === f.slice(2); }) : active)
-    .filter(function (p) { return !q || (p.Name + ' ' + p.Code + ' ' + p.Mobile + ' ' + p.Group).toLowerCase().indexOf(q) >= 0; });
+    .filter(function (p) { return !q || (p.Name + ' ' + p.Code + ' ' + shortCode(p.Code) + ' ' + p.Mobile + ' ' + p.Group + ' ' + (p.Family || '')).toLowerCase().indexOf(q) >= 0 || (q.replace(/[^a-z0-9]/g, '').length >= 4 && shortCode(p.Code).toLowerCase().indexOf(q.replace(/[^a-z0-9]/g, '')) >= 0); });
   var chips = [['all', 'All'], ['pending', 'Pending'], ['off', 'Turned off']].concat(Object.keys(groups).sort().map(function (g) { return ['g:' + g, g]; }));
   $('#main').innerHTML =
     '<div class="stat"><div><b>' + active.length + '</b><span>Pilgrims</span></div><div><b>' + (active.length - pend.length) + '</b><span>All ready</span></div><div><b>' + pend.length + '</b><span>Pending</span></div></div>' +
@@ -244,9 +244,11 @@ function renderPilgrims() {
   document.querySelectorAll('.chip').forEach(function (c) { c.onclick = function () { S.filter = c.dataset.f; renderPilgrims(); }; });
   document.querySelectorAll('.pl[data-c]').forEach(function (c) { c.onclick = function () { showPilgrim(c.dataset.c); }; });
 }
+function shortCode(c) { return String(c || '').replace(/^MZB-?/i, '').replace(/[^A-Z0-9]/gi, '').toUpperCase(); }
 function findP(code) { return (S.pilgrims || []).filter(function (p) { return p.Code === code; })[0]; }
 function waCodeMsg(p) {
-  return 'Assalamu Alaikum ' + p.Name + ', your Meezab My Hajj code is ' + p.Code + '.\nTap to open your My Hajj page: ' + APP_LINK + '#mh=' + p.Code;
+  var sc = shortCode(p.Code);
+  return 'Assalamu Alaikum ' + p.Name + ', your Meezab My Hajj code is ' + sc + '\nTap to open your My Hajj page: ' + APP_LINK + '#mh=' + sc;
 }
 function mob(p) { var m = String(p.Mobile || '').replace(/\D/g, ''); if (m.length === 12 && m.indexOf('91') === 0) m = m.slice(2); return m; }
 function showPilgrim(code) {
@@ -258,7 +260,7 @@ function showPilgrim(code) {
   $('#main').innerHTML =
     '<div class="card" style="text-align:center">' + avatar(p, 58, 'pav') +
     '<div style="font-size:19px;font-weight:600">' + esc(p.Name) + '</div><div style="color:var(--mute);font-size:13px">' + esc([p.Package, p.Group].filter(Boolean).join(' · ')) + '</div>' +
-    '<div class="code" style="margin-top:10px">' + esc(p.Code) + '</div>' + (off ? '<div style="margin-top:6px"><span class="badge off">Turned off – code does not work</span></div>' : '') +
+    '<div class="code" style="margin-top:10px">' + esc(shortCode(p.Code)) + '</div><div style="font-size:11px;color:var(--mute)">Pilgrim types these 6 letters/numbers (or taps the WhatsApp link)</div>' + (off ? '<div style="margin-top:6px"><span class="badge off">Turned off – code does not work</span></div>' : '') +
     '<div class="acts">' +
       (m ? '<a href="https://wa.me/91' + m + '?text=' + encodeURIComponent(waCodeMsg(p)) + '" target="_blank" rel="noopener"><svg viewBox="0 0 24 24"><path d="M4 20l1.2-4A8 8 0 1 1 8 18.8z"/><path d="M9 9.5c.3 2 2.5 4.3 4.6 4.6l1-1.2 1.9.9c-.3 1-1.1 1.7-2.2 1.6C11 15 8.9 12.9 8.5 9.6 8.4 8.6 9.1 7.8 10 7.6l.9 1.9z"/></svg>Send code</a>' +
              '<a href="tel:+91' + m + '"><svg viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a1.5 1.5 0 0 1-1.6 1.5C10.5 20 4 13.5 3.5 5.6A1.5 1.5 0 0 1 5 4z"/></svg>Call</a>' : '') +
