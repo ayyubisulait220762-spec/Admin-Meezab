@@ -235,7 +235,7 @@ function renderPilgrims() {
 }
 function findP(code) { return (S.pilgrims || []).filter(function (p) { return p.Code === code; })[0]; }
 function waCodeMsg(p) {
-  return 'Assalamu Alaikum ' + p.Name + ', your Meezab My Hajj code is ' + p.Code + '. Open the app → My Hajj: ' + APP_LINK;
+  return 'Assalamu Alaikum ' + p.Name + ', your Meezab My Hajj code is ' + p.Code + '.\nTap to open your My Hajj page: ' + APP_LINK + '#mh=' + p.Code;
 }
 function mob(p) { var m = String(p.Mobile || '').replace(/\D/g, ''); if (m.length === 12 && m.indexOf('91') === 0) m = m.slice(2); return m; }
 function showPilgrim(code) {
