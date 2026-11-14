@@ -5,7 +5,9 @@ var VERSION = '6.3';
 // New in 6.2: runs through the self-updating loader (no more copy-paste in the Sheet).
 // New in 6.3: checklist 'Vaccination' renamed 'Vaccine & Medical card', new 'Nusuk card' (last column);
 //             document copies (passport, visa, tickets, Nusuk card, medical card) in a PRIVATE Google Drive folder,
-//             uploaded from the Admin meezab app, downloaded by the pilgrim in My Hajj; admin 'New code' button.
+//             uploaded from the Admin meezab app, downloaded by the pilgrim in My Hajj; admin 'New code' button;
+//             Haji photo (small copy in the "Haji photos" tab), 2 pages per document, Gender + Family columns,
+//             'Documents' column (filled automatically) for the Records tab of the admin app.
 // Fix in 6.1: 'Add pilgrim' from the Admin meezab app now saves a NEW row (6.0 wrote over the Pilgrims header row).
 //             The Pilgrims tab repairs itself automatically (header put back on row 1, the pilgrim moves to row 2).
 // New in version 6 - MY HAJJ + ADMIN MEEZAB:
@@ -342,8 +344,8 @@ var PIL_HEAD = ['Code', 'Active (yes/no)', 'Name', 'Mobile', 'Package', 'Group',
   'Going flight', 'Going date & time', 'Return flight', 'Return date & time', 'Airport reporting',
   'Makkah hotel', 'Madinah hotel', 'Shifting hotel', 'Room Makkah', 'Room Madinah', 'Room shifting',
   'Passport', 'Visa', 'Vaccine & Medical card', 'Photos', 'Ihram & kit', 'Advance paid', '2nd instalment', 'Balance paid',
-  'Note for pilgrim', 'Added by', 'Added on', 'Updated by', 'Updated on', 'Nusuk card'];   // new columns only ever go at the END
-var PIL_EDIT = PIL_HEAD.slice(2, 26).concat(['Nusuk card']);   // fields the admin app may change
+  'Note for pilgrim', 'Added by', 'Added on', 'Updated by', 'Updated on', 'Nusuk card', 'Gender', 'Family', 'Documents'];   // new columns only ever go at the END
+var PIL_EDIT = PIL_HEAD.slice(2, 26).concat(['Nusuk card', 'Gender', 'Family']);   // fields the admin app may change
 var CHECKS = ['Passport', 'Visa', 'Vaccine & Medical card', 'Nusuk card', 'Photos', 'Ihram & kit', 'Advance paid', '2nd instalment', 'Balance paid'];
 var ALERT_HEAD = ['Time', 'To (all / code)', 'Title', 'Message', 'Show (yes/no)', 'By',
   'Title Urdu', 'Title Hindi', 'Title Gujarati', 'Message Urdu', 'Message Hindi', 'Message Gujarati'];
@@ -366,7 +368,7 @@ function myHajjSheets_(ss) {
   var hd = p.getRange(1, 1, 1, PIL_HEAD.length).getValues()[0];   // 6.3: keep headings up to date (rename / new last column)
   if (hd.join('|') !== PIL_HEAD.join('|')) p.getRange(1, 1, 1, PIL_HEAD.length).setValues([PIL_HEAD]).setFontWeight('bold').setBackground('#F8E4A6');
   p.getRange('A:A').setNumberFormat('@'); p.getRange('D:D').setNumberFormat('@');
-  return { p: p, a: sheet_(ss, 'Alerts', ALERT_HEAD), l: sheet_(ss, 'Admin log', LOG_HEAD) };
+  return { p: p, a: sheet_(ss, 'Alerts', ALERT_HEAD), l: sheet_(ss, 'Admin log', LOG_HEAD), ph: sheet_(ss, 'Haji photos', ['Code', 'Photo (small copy - do not edit)', 'Updated']) };
 }
 
 // ---------- passwords (menu in the Sheet) ----------
@@ -455,7 +457,8 @@ function myHajj_(d) {
               roomMakkah: g('Room Makkah'), roomMadinah: g('Room Madinah'), roomShifting: g('Room shifting') },
     checks: checks, note: g('Note for pilgrim'),
     leader: { name: LEADER_NAME, phone: LEADER_PHONE || OFFICE_PHONE }, office: OFFICE_PHONE,
-    alerts: alertsFor_(sh.a, code), docs: docList_(code, false) };
+    alerts: alertsFor_(sh.a, code), photo: thumbOf_(sh.ph, code),
+    docs: docList_(code, false).filter(function (x) { return x.key !== 'photo'; }) };
 }
 
 // ---------- admin: Admin meezab app ----------
@@ -490,7 +493,7 @@ function admin_(d) {
       var last = sh.p.getLastRow(), list = [];
       if (last > 1) list = sh.p.getRange(2, 1, last - 1, PIL_HEAD.length).getValues().map(function (r) {
         var o = {}; PIL_HEAD.forEach(function (h, i) { o[h] = str_(r[i]); }); return o; });
-      return { ok: true, head: PIL_HEAD, checks: CHECKS, list: list.reverse() };
+      return { ok: true, head: PIL_HEAD, checks: CHECKS, docTypes: DOC_TYPES, thumbs: thumbs_(sh.ph), list: list.reverse() };
     }
     case 'savePilgrim': {
       var code = cleanCode_(data.Code), row = code ? findRow_(sh.p, code) : 0, now = new Date();
@@ -552,29 +555,34 @@ function admin_(d) {
       return { ok: true, types: DOC_TYPES, list: docList_(dc, true) };
     }
     case 'uploadDoc': {
-      var uc = cleanCode_(data.code), key = String(data.key || '');
-      if (!uc || !findRow_(sh.p, uc)) return { ok: false, err: 'code' };
-      if (!DOC_NAMES[key]) return { ok: false, err: 'key' };
+      var uc = cleanCode_(data.code), key = String(data.key || ''), slot = slot_(key, data.page), urow = uc ? findRow_(sh.p, uc) : 0;
+      if (!urow) return { ok: false, err: 'code' };
+      if (!slot) return { ok: false, err: 'key' };
+      if (key === 'photo' && !/^image\//.test(String(data.mime))) return { ok: false, err: 'type' };
       var mime = String(data.mime || '').toLowerCase(), ext = DOC_MIME[mime];
       if (!ext) return { ok: false, err: 'type' };
       var bytes; try { bytes = Utilities.base64Decode(String(data.data || '')); } catch (x) { return { ok: false, err: 'file' }; }
       if (!bytes.length || bytes.length > DOC_MAX) return { ok: false, err: 'size' };
       var fo = docFolder_(uc, true);
-      docFiles_(fo, key).forEach(function (f) { f.setTrashed(true); });          // one file per document: replace the old one
-      fo.createFile(Utilities.newBlob(bytes, mime, key + '.' + ext));
-      log_(ss, user, 'upload document', uc + ' ' + DOC_NAMES[key] + ' (' + Math.round(bytes.length / 1024) + ' KB)');
-      return { ok: true, list: docList_(uc, true) };
+      docFiles_(fo, slot).forEach(function (f) { f.setTrashed(true); });          // one file per page: replace the old one
+      fo.createFile(Utilities.newBlob(bytes, mime, slot + '.' + ext));
+      if (key === 'photo') setThumb_(sh.ph, uc, data.thumb);
+      log_(ss, user, 'upload document', uc + ' ' + DOC_NAMES[key] + (slot !== key ? ' page 2' : '') + ' (' + Math.round(bytes.length / 1024) + ' KB)');
+      var ul = docList_(uc, true); docMark_(sh.p, urow, ul);
+      return { ok: true, list: ul };
     }
     case 'getDoc': {
-      var gc = cleanCode_(data.code), gf = docFolder_(gc, false), gl = gf ? docFiles_(gf, String(data.key || '')) : [];
+      var gc = cleanCode_(data.code), gf = docFolder_(gc, false), gl = gf ? docFiles_(gf, slot_(data.key, data.page)) : [];
       if (!gl.length) return { ok: false, err: 'none' };
       return { ok: true, mime: gl[0].getMimeType(), name: gl[0].getName(), data: Utilities.base64Encode(gl[0].getBlob().getBytes()) };
     }
     case 'deleteDoc': {
-      var xc = cleanCode_(data.code), xf = docFolder_(xc, false);
-      if (xf) docFiles_(xf, String(data.key || '')).forEach(function (f) { f.setTrashed(true); });
-      log_(ss, user, 'delete document', xc + ' ' + (DOC_NAMES[data.key] || data.key));
-      return { ok: true, list: xf ? docList_(xc, true) : [] };
+      var xc = cleanCode_(data.code), xf = docFolder_(xc, false), xs = slot_(data.key, data.page), xrow = xc ? findRow_(sh.p, xc) : 0;
+      if (xf && xs) docFiles_(xf, xs).forEach(function (f) { f.setTrashed(true); });
+      if (xs === 'photo') setThumb_(sh.ph, xc, '');
+      log_(ss, user, 'delete document', xc + ' ' + (DOC_NAMES[data.key] || data.key) + (xs && xs !== data.key ? ' page 2' : ''));
+      var xl = xf ? docList_(xc, true) : []; if (xrow) docMark_(sh.p, xrow, xl);
+      return { ok: true, list: xl };
     }
     case 'newCode': {                                            // replaces a leaked code; the old one stops working
       var oc = cleanCode_(data.code), orow = oc ? findRow_(sh.p, oc) : 0;
@@ -583,6 +591,7 @@ function admin_(d) {
       sh.p.getRange(orow, 1).setValue(nc);
       sh.p.getRange(orow, PIL_HEAD.indexOf('Updated by') + 1, 1, 2).setValues([[user, new Date()]]);
       var of = docFolder_(oc, false); if (of) of.setName(nc);
+      var tr = findRow_(sh.ph, oc); if (tr) sh.ph.getRange(tr, 1).setValue(nc);
       var al2 = sh.a.getLastRow();
       if (al2 > 1) { var tos = sh.a.getRange(2, 2, al2 - 1, 1).getValues(), ch = false;
         tos.forEach(function (r) { if (String(r[0]).toUpperCase() === oc) { r[0] = nc; ch = true; } });
@@ -626,7 +635,7 @@ function testEmail() {
 // ======================= DOCUMENT COPIES (version 6.3) =======================
 // Stored in the Sheet owner's Google Drive, folder "Meezab pilgrim documents" > one folder per pilgrim code.
 // Never shared: files are only sent through this script (admins with login, the pilgrim with his own code).
-var DOC_TYPES = [['passport', 'Passport'], ['visa', 'Visa'], ['tkt_go', 'Departure ticket'], ['tkt_back', 'Return ticket'],
+var DOC_TYPES = [['photo', 'Haji photo'], ['passport', 'Passport'], ['visa', 'Visa'], ['tkt_go', 'Departure ticket'], ['tkt_back', 'Return ticket'],
                  ['nusuk', 'Nusuk card'], ['medical', 'Medical card']];
 var DOC_NAMES = {}; DOC_TYPES.forEach(function (t) { DOC_NAMES[t[0]] = t[1]; });
 var DOC_MIME = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
@@ -647,19 +656,45 @@ function docFolder_(code, create) {
   while (it.hasNext()) { var f = it.next(); if (!f.isTrashed()) return f; }
   return create ? root.createFolder(code) : null;
 }
-function docFiles_(folder, key) {
-  var out = []; if (!folder || !DOC_NAMES[key]) return out;
+// A 'slot' is one page of one document: 'passport' (page 1) or 'passport-2' (page 2). The Haji photo has one page.
+function slot_(key, page) {
+  key = String(key || ''); page = parseInt(page, 10) || 1;
+  if (!DOC_NAMES[key]) return '';
+  if (page === 1) return key;
+  return page === 2 && key !== 'photo' ? key + '-2' : '';
+}
+function docFiles_(folder, slot) {
+  var out = []; if (!folder || !slot) return out;
   var it = folder.getFiles();
-  while (it.hasNext()) { var f = it.next(); if (!f.isTrashed() && String(f.getName()).split('.')[0] === key) out.push(f); }
+  while (it.hasNext()) { var f = it.next(); if (!f.isTrashed() && String(f.getName()).split('.')[0] === slot) out.push(f); }
   return out;
+}
+// Writes which pages are uploaded into the 'Documents' column (e.g. "photo,passport,passport-2,visa").
+function docMark_(p, row, list) {
+  p.getRange(row, PIL_HEAD.indexOf('Documents') + 1).setValue(list.map(function (x) { return x.page === 2 ? x.key + '-2' : x.key; }).join(','));
+}
+function thumbs_(ph) {
+  var o = {}, last = ph.getLastRow(); if (last < 2) return o;
+  ph.getRange(2, 1, last - 1, 2).getValues().forEach(function (r) { if (r[0] && r[1]) o[String(r[0])] = String(r[1]); });
+  return o;
+}
+function thumbOf_(ph, code) { var r = findRow_(ph, code); return r ? String(ph.getRange(r, 2).getValue() || '') : ''; }
+function setThumb_(ph, code, b64) {
+  b64 = String(b64 || '').replace(/[^A-Za-z0-9+/=]/g, '');
+  if (b64.length > 45000) b64 = '';                      // a Sheet cell holds at most 50,000 characters
+  var r = findRow_(ph, code);
+  if (!b64) { if (r) ph.getRange(r, 2, 1, 2).setValues([['', new Date()]]); return; }
+  if (r) ph.getRange(r, 2, 1, 2).setValues([[b64, new Date()]]); else ph.appendRow([code, b64, new Date()]);
 }
 function docList_(code, full) {
   var fo = null; try { fo = docFolder_(code, false); } catch (x) { return []; }
   if (!fo) return [];
-  var have = {}, it = fo.getFiles();
-  while (it.hasNext()) { var f = it.next(); if (f.isTrashed()) continue; var k = String(f.getName()).split('.')[0];
-    if (DOC_NAMES[k]) have[k] = { key: k, size: f.getSize(), mime: f.getMimeType(), on: full ? str_(f.getLastUpdated()) : undefined }; }
-  return DOC_TYPES.filter(function (t) { return have[t[0]]; }).map(function (t) { return have[t[0]]; });
+  var have = {}, it = fo.getFiles(), out = [];
+  while (it.hasNext()) { var f = it.next(); if (f.isTrashed()) continue; var sl = String(f.getName()).split('.')[0];
+    have[sl] = { size: f.getSize(), mime: f.getMimeType(), on: full ? str_(f.getLastUpdated()) : undefined }; }
+  DOC_TYPES.forEach(function (t) { [1, 2].forEach(function (pg) { var sl = slot_(t[0], pg);
+    if (sl && have[sl]) out.push({ key: t[0], page: pg, size: have[sl].size, mime: have[sl].mime, on: have[sl].on }); }); });
+  return out;
 }
 // Pilgrim downloads one of his own documents with his code.
 function myHajjDoc_(d) {
@@ -668,7 +703,7 @@ function myHajjDoc_(d) {
   var code = cleanCode_(d.code), sh = myHajjSheets_(SpreadsheetApp.getActive()), row = code ? findRow_(sh.p, code) : 0;
   var act = row ? sh.p.getRange(row, 2).getValue() : '';
   if (!row || !yes_(act || 'yes')) { c.put(k, String((parseInt(c.get(k), 10) || 0) + 1), 3700); return { ok: false, err: 'code' }; }
-  var fl = docFiles_(docFolder_(code, false), String(d.key || ''));
+  var fl = docFiles_(docFolder_(code, false), slot_(d.key, d.page));
   if (!fl.length) return { ok: false, err: 'none' };
-  return { ok: true, key: d.key, mime: fl[0].getMimeType(), name: fl[0].getName(), data: Utilities.base64Encode(fl[0].getBlob().getBytes()) };
+  return { ok: true, key: d.key, page: parseInt(d.page, 10) || 1, mime: fl[0].getMimeType(), name: fl[0].getName(), data: Utilities.base64Encode(fl[0].getBlob().getBytes()) };
 }
