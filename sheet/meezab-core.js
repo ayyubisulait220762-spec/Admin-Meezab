@@ -168,7 +168,7 @@ function doPost(e) {
   var d;
   try { d = JSON.parse(e && e.postData && e.postData.contents || ''); } catch (x) { return out_('bad request'); }
   if (!d || typeof d !== 'object') return out_('bad request');
-  if (d.type === 'myhajjdoc' || (d.type === 'admin' && (d.action === 'inboxAdd' || d.action === 'getInbox' || d.action === 'getDoc'))) {
+  if (d.type === 'myhajjdoc' || (d.type === 'admin' && (d.action === 'inboxAdd' || d.action === 'getInbox' || d.action === 'getDoc' || d.action === 'hcGet'))) {
     try { return json_(d.type === 'myhajjdoc' ? myHajjDoc_(d) : admin_(d)); }       // big files / text reading: no queue for others
     catch (x) { return json_({ ok: false, err: 'error' }); }
   }
@@ -702,12 +702,22 @@ function admin_(d) {
       if (hlast > 1) hsh.getRange(2, 1, hlast - 1, 1).getValues().forEach(function (r, i) { if (String(r[0]) === hid) hr2 = i + 2; });
       if (!hr2) return { ok: false, err: 'none' };
       var hc = cleanCode_(data.code);
-      if (!hc && data.badge) { var bl = sh.p.getLastRow(); if (bl > 1) sh.p.getRange(2, 1, bl - 1, PIL_HEAD.length).getValues().forEach(function (r) { if (String(r[PIL_HEAD.indexOf('Badge')]) === String(data.badge).toUpperCase()) hc = String(r[0]); }); }
+      if (!hc && data.badge) { var bl = sh.p.getLastRow(), bcol = PIL_HEAD.indexOf('Badge') + 1; if (bl > 1) { var bc = sh.p.getRange(2, 1, bl - 1, 1).getValues(), bb = sh.p.getRange(2, bcol, bl - 1, 1).getValues();
+        bb.forEach(function (r, i) { if (String(r[0]) === String(data.badge).toUpperCase()) hc = String(bc[i][0]); }); } }
       if (!hc || !findRow_(sh.p, hc)) return { ok: false, err: 'code' };
-      var cur = String(hsh.getRange(hr2, 5).getValue() || '').split(',').filter(Boolean), on = data.present !== false && data.present !== 'false';
-      cur = cur.filter(function (c) { return c !== hc; }); if (on) cur.push(hc);
+      // each entry = CODE~Bus (two phones can scan into one list at the same time; the script lock keeps every scan)
+      var bus = clean_(data.bus, 20).replace(/[~,]/g, ' ') || 'Bus';
+      var cur = String(hsh.getRange(hr2, 5).getValue() || '').split(',').filter(Boolean), on = data.present !== false && data.present !== 'false', moved = '';
+      cur = cur.filter(function (c) { var p2 = c.split('~'); if (p2[0] === hc) { if (on && (p2[1] || '') !== bus) moved = p2[1] || ''; return false; } return true; });
+      if (on) cur.push(hc + '~' + bus);
       hsh.getRange(hr2, 5, 1, 2).setValues([[cur.join(','), new Date()]]);
-      return { ok: true, code: hc, present: cur };
+      var hobj = hcObj_(hsh.getRange(hr2, 1, 1, HC_HEAD.length).getValues()[0]);
+      return { ok: true, code: hc, moved: moved, present: hobj.present, buses: hobj.buses };
+    }
+    case 'hcGet': {                                              // light refresh, every few seconds while a list is open
+      var hg = sheet_(ss, 'Headcount', HC_HEAD), hgl = hg.getLastRow(), hit = null;
+      if (hgl > 1) hg.getRange(2, 1, hgl - 1, HC_HEAD.length).getValues().forEach(function (r) { if (String(r[0]) === String(data.id)) hit = hcObj_(r); });
+      return hit ? { ok: true, item: hit } : { ok: false, err: 'none' };
     }
     case 'hcDelete': {
       var hd = sheet_(ss, 'Headcount', HC_HEAD), hdl = hd.getLastRow();
@@ -1031,4 +1041,8 @@ function badges_(p) {
   r.forEach(function (x, i) { if (!x[0] && codes[i][0]) { x[0] = newBadge_(have); have[x[0]] = 1; ch = true; } });
   if (ch) p.getRange(2, col, last - 1, 1).setValues(r);
 }
-function hcObj_(r) { return { id: String(r[0]), name: String(r[1]), by: String(r[2]), on: str_(r[3]), present: String(r[4] || '').split(',').filter(Boolean), upd: str_(r[5]) }; }
+function hcObj_(r) {
+  var buses = {}, present = [];
+  String(r[4] || '').split(',').filter(Boolean).forEach(function (e) { var p = e.split('~'); present.push(p[0]); buses[p[0]] = p[1] || ''; });
+  return { id: String(r[0]), name: String(r[1]), by: String(r[2]), on: str_(r[3]), present: present, buses: buses, upd: str_(r[5]) };
+}

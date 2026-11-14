@@ -987,60 +987,118 @@ function hcView() {
     api('hcNew', { data: { name: n } }).then(function (j) { if (!j.ok) throw new Error(); S.hc = [j.item].concat(S.hc || []); hcOpen(j.item.id); }).catch(function () { toast('Not created – check internet'); }); };
   $('#hcprint').onclick = printBadges;
   api('hcList').then(function (j) { S.hc = j.list || []; var b = $('#hcl'); if (!b) return;
-    b.innerHTML = S.hc.length ? S.hc.map(function (x) { var n = activeP().length; return '<div class="card pl" data-hc="' + esc(x.id) + '"><div class="m"><div class="n">' + esc(x.name) + '</div><div class="s">' + x.present.length + ' of ' + n + ' present · ' + esc(x.on) + ' · ' + esc(NAMES[x.by] || x.by) + '</div></div><span style="color:var(--g2);font-size:22px">›</span></div>'; }).join('')
+    b.innerHTML = S.hc.length ? S.hc.map(function (x) { var c = hcCounts(x); return '<div class="card pl" data-hc="' + esc(x.id) + '"><div class="m"><div class="n">' + esc(x.name) + '</div><div class="s">' + c.here + ' of ' + c.total + ' present · ' + esc(hcPerTxt(c.per)) + '</div><div class="s">' + esc(x.on) + ' · ' + esc(NAMES[x.by] || x.by) + '</div></div><span style="color:var(--g2);font-size:22px">›</span></div>'; }).join('')
       : '<div class="empty">No headcount lists yet.</div>';
     document.querySelectorAll('[data-hc]').forEach(function (c) { c.onclick = function () { hcOpen(c.dataset.hc); }; });
   }).catch(function () { $('#hcl').innerHTML = '<div class="empty">Could not load.</div>'; });
 }
-function hcOpen(id) {
+var BUSES = ['Bus 1', 'Bus 2', 'Bus 3', 'Airport'];
+function myBus(id) { var b = ''; try { b = localStorage.getItem('mz_bus_' + id) || ''; } catch (e) {} return b || (S.user === 'basil' ? 'Bus 2' : 'Bus 1'); }
+function setBus(id, b) { try { localStorage.setItem('mz_bus_' + id, b); } catch (e) {} }
+function hcApply(x, code, bus, on) {             // change the list on this phone at once (server saves in the background)
+  x.buses = x.buses || {}; var was = x.buses[code];
+  x.present = (x.present || []).filter(function (c) { return c !== code; }); delete x.buses[code];
+  if (on) { x.present.push(code); x.buses[code] = bus; }
+  return was;
+}
+S.hcQ = [];
+function hcQueue(x, item) { S.hcQ.push(item); hcPump(x); }
+function hcPump(x) {
+  if (S.hcBusy || !S.hcQ.length) { hcPend(); return; } S.hcBusy = true; hcPend();
+  var it = S.hcQ[0];
+  api('hcMark', { data: { id: x.id, code: it.code || '', badge: it.badge || '', bus: it.bus, present: it.on } }).then(function (j) {
+    S.hcBusy = false;
+    if (!j.ok) { S.hcQ.shift(); if (j.err === 'code') toast('Badge not found – is that Haji turned off?'); hcPump(x); return; }
+    S.hcQ.shift(); x.present = j.present; x.buses = j.buses;
+    S.hcQ.forEach(function (q) { if (q.code) hcApply(x, q.code, q.bus, q.on); });          // keep scans that are still waiting
+    hcRefreshUi(x); hcPump(x);
+  }).catch(function () { S.hcBusy = false; hcPend(); setTimeout(function () { hcPump(x); }, 2000); });
+}
+function hcPend() { var n = S.hcQ.length, el = document.getElementById('scp'); if (el) el.textContent = n ? '⏳ ' + n + ' waiting to save…' : '✓ all saved'; var e2 = document.getElementById('hcpend'); if (e2) e2.textContent = n ? '⏳ ' + n + ' waiting to save' : ''; }
+function hcCounts(x) {
+  var A = activeP(), ids = {}, per = {}, missing = []; A.forEach(function (p) { ids[p.Code] = p; });
+  (x.present || []).forEach(function (c) { if (!ids[c]) return; var b = (x.buses || {})[c] || 'Bus'; per[b] = (per[b] || 0) + 1; });
+  A.forEach(function (p) { if ((x.present || []).indexOf(p.Code) < 0) missing.push(p); });
+  return { total: A.length, here: A.length - missing.length, per: per, missing: missing };
+}
+function hcPerTxt(per) { var k = Object.keys(per).sort(); return k.length ? k.map(function (b) { return b + ': ' + per[b]; }).join(' · ') : 'Nobody scanned yet'; }
+function hcRefreshUi(x) {
+  var c = hcCounts(x), sc = document.getElementById('scc');
+  if (sc) { sc.innerHTML = '<b>' + c.here + '/' + c.total + '</b> · ' + esc(hcPerTxt(c.per)) + (c.missing.length ? ' · <span style="color:#ff9b8a">' + c.missing.length + ' missing</span>' : ' · ✓ all'); return; }
+  if (S.hcOpenId === x.id && document.getElementById('hcnum')) hcOpen(x.id, true);
+}
+function hcOpen(id, keepScroll) {
   var x = (S.hc || []).filter(function (h) { return h.id === id; })[0]; if (!x) return hcView();
-  var A = activeP().slice().sort(byName), pres = {}; x.present.forEach(function (c) { pres[c] = 1; });
-  var miss = A.filter(function (p) { return !pres[p.Code]; }), here = A.filter(function (p) { return pres[p.Code]; });
-  var row = function (p) { return '<div class="tog hcr" data-hcp="' + esc(p.Code) + '"><span style="display:flex;align-items:center;gap:10px">' + avatar(p, 34) + '<span>' + esc(p.Name) + '<br><small style="color:var(--mute)">' + esc([p.Group, p['Mina tent'] ? 'Tent ' + p['Mina tent'] : ''].filter(Boolean).join(' · ')) + '</small></span></span><span class="sw' + (pres[p.Code] ? ' on' : '') + '"></span></div>'; };
+  S.hcOpenId = id; var bus = myBus(id), c = hcCounts(x), pres = {}; (x.present || []).forEach(function (k) { pres[k] = 1; });
+  var A = activeP().slice().sort(byName), here = A.filter(function (p) { return pres[p.Code]; });
+  var row = function (p) { var b = (x.buses || {})[p.Code];
+    return '<div class="tog hcr" data-hcp="' + esc(p.Code) + '"><span style="display:flex;align-items:center;gap:10px">' + avatar(p, 34) + '<span>' + esc(p.Name) + '<br><small style="color:var(--mute)">' +
+      esc([b ? '✓ ' + b : '', p.Group, p['Mina tent'] ? 'Tent ' + p['Mina tent'] : ''].filter(Boolean).join(' · ')) + '</small></span></span><span class="sw' + (pres[p.Code] ? ' on' : '') + '"></span></div>'; };
+  var y = window.scrollY;
   $('#rec').innerHTML = '<button class="btn sm sec" id="hcback" style="margin-bottom:10px">‹ All lists</button><div class="card hcbig"><div style="font-size:13px;color:var(--mute)">' + esc(x.name) + '</div>' +
-    '<div class="hcnum"><b>' + here.length + '</b> of ' + A.length + ' present</div>' + (miss.length ? '<div style="color:var(--bad);font-weight:600">' + miss.length + ' missing</div>' : '<div style="color:var(--ok);font-weight:700">Everyone is here ✓</div>') +
-    '<button class="btn" id="hcscan" style="margin-top:12px">📷 Scan QR</button></div>' +
-    (miss.length ? '<h2 style="color:var(--bad)">Missing (' + miss.length + ')</h2><div class="card">' + miss.map(row).join('') + '</div>' : '') +
+    '<div class="hcnum" id="hcnum"><b>' + c.here + '</b> of ' + c.total + ' present</div><div style="font-size:14px">' + esc(hcPerTxt(c.per)) + '</div>' +
+    (c.missing.length ? '<div style="color:var(--bad);font-weight:600;margin-top:4px">' + c.missing.length + ' missing</div>' : '<div style="color:var(--ok);font-weight:700;margin-top:4px">Everyone is here ✓</div>') +
+    '<div style="font-size:12px;color:var(--mute);margin-top:10px">This phone scans for:</div><div class="chips" style="justify-content:center;margin:6px 0 0">' +
+    BUSES.map(function (b) { return '<button class="chip' + (b === bus ? ' on' : '') + '" data-bus="' + b + '">' + b + '</button>'; }).join('') + '</div>' +
+    '<button class="btn" id="hcscan" style="margin-top:12px">📷 Scan QR for ' + esc(bus) + '</button><div id="hcpend" style="font-size:12px;color:var(--warn);margin-top:6px"></div>' +
+    '<div style="font-size:11px;color:var(--mute);margin-top:6px">Live – updates from the other phone every few seconds</div></div>' +
+    (c.missing.length ? '<h2 style="color:var(--bad)">Missing (' + c.missing.length + ')</h2><div class="card">' + c.missing.map(row).join('') + '</div>' : '') +
     (here.length ? '<h2>Present (' + here.length + ')</h2><div class="card">' + here.map(row).join('') + '</div>' : '') +
     '<button class="btn sm sec" id="hcdel" style="margin-top:14px">Delete this list</button>';
-  $('#hcback').onclick = hcView; $('#hcscan').onclick = function () { scanQR(x); };
-  $('#hcdel').onclick = function () { if (!confirm('Delete this headcount list?')) return; api('hcDelete', { data: { id: x.id } }).then(function () { S.hc = S.hc.filter(function (h) { return h.id !== x.id; }); hcView(); }); };
-  document.querySelectorAll('[data-hcp]').forEach(function (r) { r.onclick = function () { var c = r.dataset.hcp, on = !pres[c];
-    api('hcMark', { data: { id: x.id, code: c, present: on } }).then(function (j) { if (!j.ok) throw new Error(); x.present = j.present; hcOpen(x.id); }).catch(function () { toast('Not saved – check internet'); }); }; });
+  if (keepScroll) window.scrollTo(0, y);
+  hcPend();
+  $('#hcback').onclick = function () { S.hcOpenId = ''; hcView(); };
+  $('#hcscan').onclick = function () { scanQR(x); };
+  document.querySelectorAll('[data-bus]').forEach(function (b) { b.onclick = function () { setBus(x.id, b.dataset.bus); hcOpen(x.id, true); }; });
+  $('#hcdel').onclick = function () { if (!confirm('Delete this headcount list?')) return; S.hcOpenId = ''; api('hcDelete', { data: { id: x.id } }).then(function () { S.hc = S.hc.filter(function (h) { return h.id !== x.id; }); hcView(); }); };
+  document.querySelectorAll('[data-hcp]').forEach(function (r) { r.onclick = function () { var k = r.dataset.hcp, on = !pres[k];
+    hcApply(x, k, myBus(x.id), on); hcQueue(x, { code: k, bus: myBus(x.id), on: on }); hcOpen(x.id, true); }; });
+  // live refresh from the Sheet (the other phone's scans)
+  clearInterval(S.hcTimer);
+  S.hcTimer = setInterval(function () {
+    if (S.hcOpenId !== x.id || S.tab !== 'records' || document.hidden || S.hcQ.length || S.hcBusy) { if (S.hcOpenId !== x.id) clearInterval(S.hcTimer); return; }
+    api('hcGet', { data: { id: x.id } }).then(function (j) { if (!j.ok || S.hcQ.length || S.hcBusy) return;
+      var changed = (j.item.present || []).join(',') + JSON.stringify(j.item.buses) !== (x.present || []).join(',') + JSON.stringify(x.buses);
+      if (changed) { x.present = j.item.present; x.buses = j.item.buses; hcRefreshUi(x); } }).catch(function () {});
+  }, 3000);
 }
 function scanQR(x) {
-  var o = document.createElement('div'); o.className = 'scanov';
-  o.innerHTML = '<video playsinline muted></video><div class="scanbox"></div><div class="scantop"><b>' + esc(x.name) + '</b><span id="scc">' + x.present.length + ' of ' + activeP().length + ' present</span></div><div class="scanmsg" id="scm">Point the camera at a Meezab QR badge</div><button class="btn" id="scx">Done</button>';
-  document.body.appendChild(o);
-  var v = o.querySelector('video'), stream = null, stop = false, last = '', lastT = 0, det = null, cv = document.createElement('canvas'), cx = cv.getContext('2d', { willReadFrequently: true });
+  var bus = myBus(x.id), o = document.createElement('div'); o.className = 'scanov';
+  o.innerHTML = '<video playsinline muted autoplay></video><div class="scanbox"></div><div class="scantop"><span><b>' + esc(bus) + '</b> · ' + esc(x.name) + '</span><span id="scc"></span></div>' +
+    '<div class="scanmsg"><div id="scm">Point the camera at a Meezab QR badge</div><div id="scr" style="font-size:12px;color:#ccc;margin-top:6px"></div><div id="scp" style="font-size:11px;color:#aaa;margin-top:4px"></div></div><button class="btn" id="scx">Done</button>';
+  document.body.appendChild(o); hcRefreshUi(x); hcPend();
+  var v = o.querySelector('video'), stream = null, stop = false, seen = {}, det = null, recent = [], cv = document.createElement('canvas'), cx = cv.getContext('2d', { willReadFrequently: true });
   var close = function () { stop = true; if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); o.remove(); hcOpen(x.id); };
   o.querySelector('#scx').onclick = close;
+  var say = function (html, good) { $('#scm').innerHTML = html; if (good) { try { navigator.vibrate && navigator.vibrate(70); } catch (e) {} } };
   var found = function (txt) {
-    var m = /^MZBB:(B[A-Z0-9]{7})$/.exec(String(txt || '').trim()); var now = Date.now();
-    if (!m) { if (now - lastT > 2000) { $('#scm').textContent = 'Not a Meezab badge'; lastT = now; } return; }
-    if (m[1] === last && now - lastT < 4000) return; last = m[1]; lastT = now;
+    var m = /^MZBB:(B[A-Z0-9]{7})$/.exec(String(txt || '').trim()), now = Date.now();
+    if (!m) { if (!seen._bad || now - seen._bad > 2500) { say('Not a Meezab badge'); seen._bad = now; } return; }
+    if (seen[m[1]] && now - seen[m[1]] < 3000) return; seen[m[1]] = now;
     var p = (S.pilgrims || []).filter(function (q) { return q.Badge === m[1]; })[0];
-    if (p && x.present.indexOf(p.Code) >= 0) { $('#scm').textContent = '✓ ' + p.Name + ' – already counted'; return; }
-    $('#scm').textContent = 'Saving…';
-    api('hcMark', { data: { id: x.id, badge: m[1], present: true } }).then(function (j) { if (!j.ok) throw new Error(j.err);
-      x.present = j.present; var q = findP(j.code); try { navigator.vibrate && navigator.vibrate(80); } catch (e) {}
-      $('#scm').innerHTML = '<span style="color:var(--ok)">✓ ' + esc(q ? q.Name : j.code) + '</span>'; $('#scc').textContent = x.present.length + ' of ' + activeP().length + ' present';
-    }).catch(function (e) { $('#scm').textContent = e && e.message === 'code' ? 'Badge not found – is he turned off?' : 'Not saved – check internet'; last = ''; });
+    if (!p) { say('Checking badge…'); hcQueue(x, { badge: m[1], bus: bus, on: true }); return; }
+    var was = (x.buses || {})[p.Code];
+    if ((x.present || []).indexOf(p.Code) >= 0 && was === bus) { say('✓ ' + esc(p.Name) + ' – already counted'); return; }
+    hcApply(x, p.Code, bus, true); hcQueue(x, { code: p.Code, bus: bus, on: true });
+    say('<span style="color:#7be3a2">✓ ' + esc(p.Name) + '</span>' + (was && was !== bus ? '<br><small style="color:#ffd27a">moved from ' + esc(was) + '</small>' : ''), true);
+    recent.unshift(p.Name); recent = recent.slice(0, 3); $('#scr').textContent = 'Last: ' + recent.join(' · '); hcRefreshUi(x);
   };
   var loop = function () { if (stop) return;
-    if (v.readyState >= 2) {
-      if (det) det.detect(v).then(function (r) { if (r && r[0]) found(r[0].rawValue); }).catch(function () {});
-      else if (window.jsQR) { var w = 480, h = Math.round(w * v.videoHeight / v.videoWidth) || 360; cv.width = w; cv.height = h; cx.drawImage(v, 0, 0, w, h);
-        var r = window.jsQR(cx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: 'dontInvert' }); if (r) found(r.data); }
+    if (v.readyState >= 2 && v.videoWidth) {
+      if (det) { det.detect(v).then(function (r) { if (r && r[0]) found(r[0].rawValue); }).catch(function () {}).then(function () { setTimeout(loop, 90); }); return; }
+      if (window.jsQR) { var s = Math.min(v.videoWidth, v.videoHeight) * 0.8, sx = (v.videoWidth - s) / 2, sy = (v.videoHeight - s) / 2, w = 360;   // centre square only = faster
+        cv.width = cv.height = w; cx.drawImage(v, sx, sy, s, s, 0, 0, w, w);
+        var r = window.jsQR(cx.getImageData(0, 0, w, w).data, w, w, { inversionAttempts: 'dontInvert' }); if (r) found(r.data); }
     }
-    setTimeout(loop, 250);
+    setTimeout(loop, 110);
   };
   var start = function () {
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }).then(function (s) { stream = s; v.srcObject = s; v.play(); loop(); })
-      .catch(function () { $('#scm').textContent = 'Camera not allowed – allow the camera for this site, or tick names instead.'; });
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false })
+      .then(function (s) { stream = s; v.srcObject = s; var pl = v.play(); if (pl && pl.catch) pl.catch(function () {}); loop(); })
+      .catch(function () { say('Camera not allowed – allow the camera for this site, or tick names instead.'); });
   };
   if ('BarcodeDetector' in window) { try { det = new window.BarcodeDetector({ formats: ['qr_code'] }); } catch (e) { det = null; } }
-  if (det) start(); else loadLib('jsQR.min.js').then(start).catch(function () { $('#scm').textContent = 'Scanner could not load – check internet once, then try again.'; });
+  if (det) start(); else loadLib('jsQR.min.js').then(start).catch(function () { say('Scanner could not load – check internet once, then try again.'); });
 }
 function qrSvg(text, px) { var q = window.qrcode(0, 'M'); q.addData(text); q.make(); return q.createSvgTag({ cellSize: Math.max(2, Math.round(px / (q.getModuleCount() + 8))), margin: 4 }); }
 function printBadges() {
@@ -1208,11 +1266,14 @@ function demoApi(b) {
       D.tasks = D.tasks.filter(function (x) { return x.id !== tk.id; }).concat([tk]); return { ok: true, task: tk, cal: 'ok' }; }
     case 'doneTask': { var dt = D.tasks.filter(function (x) { return x.id === b.data.id; })[0]; dt.status = b.data.done ? 'done' : 'open'; dt.doneBy = b.user; return { ok: true, task: dt }; }
     case 'deleteTask': D.tasks = D.tasks.filter(function (x) { return x.id !== b.data.id; }); return { ok: true };
-    case 'hcList': return { ok: true, list: (D.hc = D.hc || [{ id: 'H1', name: 'Bus to Mina – 8 Dhul Hijjah', by: 'basil', on: '15 Nov 2026, 5:00 am', present: ['MZB-7K4Q-2P', 'MZB-H3WD-9X', 'MZB-YC5K-3S'] }]) };
-    case 'hcNew': { var hn = { id: 'H' + Date.now(), name: b.data.name, by: b.user, on: 'now', present: [] }; D.hc = [hn].concat(D.hc || []); return { ok: true, item: hn }; }
+    case 'hcList': return JSON.parse(JSON.stringify({ ok: true, list: (D.hc = D.hc || [{ id: 'H1', name: 'Bus to Mina – 8 Dhul Hijjah', by: 'basil', on: '15 Nov 2026, 5:00 am', present: ['MZB-7K4Q-2P', 'MZB-H3WD-9X', 'MZB-YC5K-3S'], buses: { 'MZB-7K4Q-2P': 'Bus 1', 'MZB-H3WD-9X': 'Bus 1', 'MZB-YC5K-3S': 'Bus 2' } }]) })); 
+    case 'hcNew': { var hn = { id: 'H' + Date.now(), name: b.data.name, by: b.user, on: 'now', present: [], buses: {} }; D.hc = [hn].concat(D.hc || []); return JSON.parse(JSON.stringify({ ok: true, item: hn })); }
     case 'hcMark': { var hx = D.hc.filter(function (h) { return h.id === b.data.id; })[0], hcode = b.data.code;
       if (!hcode && b.data.badge) { var bp = D.list.filter(function (p) { return p.Badge === b.data.badge; })[0]; if (!bp) return { ok: false, err: 'code' }; hcode = bp.Code; }
-      hx.present = hx.present.filter(function (c) { return c !== hcode; }); if (b.data.present !== false) hx.present.push(hcode); return { ok: true, code: hcode, present: hx.present }; }
+      hx.buses = hx.buses || {}; var mv = hx.buses[hcode] && hx.buses[hcode] !== b.data.bus ? hx.buses[hcode] : '';
+      hx.present = hx.present.filter(function (c) { return c !== hcode; }); delete hx.buses[hcode]; if (b.data.present !== false) { hx.present.push(hcode); hx.buses[hcode] = b.data.bus; }
+      return JSON.parse(JSON.stringify({ ok: true, code: hcode, moved: mv, present: hx.present, buses: hx.buses })); }
+    case 'hcGet': return JSON.parse(JSON.stringify({ ok: true, item: D.hc.filter(function (h) { return h.id === b.data.id; })[0] }));
     case 'hcDelete': D.hc = D.hc.filter(function (h) { return h.id !== b.data.id; }); return { ok: true };
     case 'setTentPhoto': D.tents = D.tents || {}; var tk2 = tentKey(b.data.maktab, b.data.tent); if (b.data.photo) D.tents[tk2] = b.data.photo; else delete D.tents[tk2]; return { ok: true, tents: D.tents };
     default: return { ok: true };
