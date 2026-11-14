@@ -1,6 +1,6 @@
 // MEEZAB CORE - the real code of the "Meezab leads" Sheet. Loaded automatically by the small loader in the Sheet
 // (Meezab-loader.gs). To update the Sheet, publish a new version of this file on GitHub and raise VERSION. Nothing to paste.
-var VERSION = '6.4';
+var VERSION = '6.5';
 // MEEZAB E RAHEMAT - leads, feedback, news, My Hajj and the Admin meezab app in one Google Sheet.   (version 6.2, 10 Nov 2026)
 // New in 6.2: runs through the self-updating loader (no more copy-paste in the Sheet).
 // New in 6.3: checklist 'Vaccination' renamed 'Vaccine & Medical card', new 'Nusuk card' (last column);
@@ -11,6 +11,8 @@ var VERSION = '6.4';
 // New in 6.4: INBOX for bulk upload – many files go into Drive > Meezab pilgrim documents > Inbox, then 'Give to Haji'
 //             moves each one into the pilgrim's folder. The pilgrim gets one automatic alert per day listing new documents.
 //             Photos and scanned PDFs: Google Drive reads the text in them (OCR) to find the Haji's name automatically.
+// New in 6.5: ONE PHONE PER CODE – the first phone that opens My Hajj is remembered ('Phone lock' column); a forwarded
+//             link on another phone is refused. Admin app: 'Reset phone'. New code also resets it.
 // Fix in 6.1: 'Add pilgrim' from the Admin meezab app now saves a NEW row (6.0 wrote over the Pilgrims header row).
 //             The Pilgrims tab repairs itself automatically (header put back on row 1, the pilgrim moves to row 2).
 // New in version 6 - MY HAJJ + ADMIN MEEZAB:
@@ -351,7 +353,7 @@ var PIL_HEAD = ['Code', 'Active (yes/no)', 'Name', 'Mobile', 'Package', 'Group',
   'Going flight', 'Going date & time', 'Return flight', 'Return date & time', 'Airport reporting',
   'Makkah hotel', 'Madinah hotel', 'Shifting hotel', 'Room Makkah', 'Room Madinah', 'Room shifting',
   'Passport', 'Visa', 'Vaccine & Medical card', 'Photos', 'Ihram & kit', 'Advance paid', '2nd instalment', 'Balance paid',
-  'Note for pilgrim', 'Added by', 'Added on', 'Updated by', 'Updated on', 'Nusuk card', 'Gender', 'Family', 'Documents'];   // new columns only ever go at the END
+  'Note for pilgrim', 'Added by', 'Added on', 'Updated by', 'Updated on', 'Nusuk card', 'Gender', 'Family', 'Documents', 'Phone lock'];   // new columns only ever go at the END
 var PIL_EDIT = PIL_HEAD.slice(2, 26).concat(['Nusuk card', 'Gender', 'Family']);   // fields the admin app may change
 var CHECKS = ['Passport', 'Visa', 'Vaccine & Medical card', 'Nusuk card', 'Photos', 'Ihram & kit', 'Advance paid', '2nd instalment', 'Balance paid'];
 var ALERT_HEAD = ['Time', 'To (all / code)', 'Title', 'Message', 'Show (yes/no)', 'By',
@@ -454,6 +456,7 @@ function myHajj_(d) {
   var ss = SpreadsheetApp.getActive(), sh = myHajjSheets_(ss), row = code ? findRow_(sh.p, code) : 0;
   var r = row ? sh.p.getRange(row, 1, 1, PIL_HEAD.length).getValues()[0] : null;
   if (!r || !yes_(r[1] || 'yes')) { c.put(k, String((parseInt(c.get(k), 10) || 0) + 1), 3700); return { ok: false, err: 'code' }; }
+  if (!phoneOk_(sh.p, row, r[PIL_HEAD.indexOf('Phone lock')], d)) return { ok: false, err: 'device', office: OFFICE_PHONE };
   var g = function (h) { return str_(r[PIL_HEAD.indexOf(h)]); };
   var checks = {}; CHECKS.forEach(function (h) { checks[h] = yes_(r[PIL_HEAD.indexOf(h)]); });
   var dep = r[PIL_HEAD.indexOf('Going date & time')];
@@ -637,11 +640,16 @@ function admin_(d) {
       if (gk !== 'photo') docAlert_(sh.a, gcode, DOC_NAMES[gk] + (gslot !== gk ? ' (page 2)' : ''));
       return { ok: true, code: gcode, name: str_(gname), doc: DOC_NAMES[gk], list: gl2 };
     }
+    case 'resetPhone': {
+      var rc = cleanCode_(data.code), rr = rc ? findRow_(sh.p, rc) : 0; if (!rr) return { ok: false, err: 'code' };
+      sh.p.getRange(rr, PIL_HEAD.indexOf('Phone lock') + 1).setValue('');
+      log_(ss, user, 'reset phone', rc); return { ok: true };
+    }
     case 'newCode': {                                            // replaces a leaked code; the old one stops working
       var oc = cleanCode_(data.code), orow = oc ? findRow_(sh.p, oc) : 0;
       if (!orow) return { ok: false, err: 'code' };
       var nc = newCode_(sh.p);
-      sh.p.getRange(orow, 1).setValue(nc);
+      sh.p.getRange(orow, 1).setValue(nc); sh.p.getRange(orow, PIL_HEAD.indexOf('Phone lock') + 1).setValue('');
       sh.p.getRange(orow, PIL_HEAD.indexOf('Updated by') + 1, 1, 2).setValues([[user, new Date()]]);
       var of = docFolder_(oc, false); if (of) of.setName(nc);
       var tr = findRow_(sh.ph, oc); if (tr) sh.ph.getRange(tr, 1).setValue(nc);
@@ -756,6 +764,9 @@ function myHajjDoc_(d) {
   var code = cleanCode_(d.code), sh = myHajjSheets_(SpreadsheetApp.getActive()), row = code ? findRow_(sh.p, code) : 0;
   var act = row ? sh.p.getRange(row, 2).getValue() : '';
   if (!row || !yes_(act || 'yes')) { c.put(k, String((parseInt(c.get(k), 10) || 0) + 1), 3700); return { ok: false, err: 'code' }; }
+  var lk2 = LockService.getScriptLock(); try { lk2.waitLock(15000); } catch (x) { return { ok: false, err: 'busy' }; }
+  try { if (!phoneOk_(sh.p, row, sh.p.getRange(row, PIL_HEAD.indexOf('Phone lock') + 1).getValue(), d)) return { ok: false, err: 'device', office: OFFICE_PHONE }; }
+  finally { lk2.releaseLock(); }
   var fl = docFiles_(docFolder_(code, false), slot_(d.key, d.page));
   if (!fl.length) return { ok: false, err: 'none' };
   return { ok: true, key: d.key, page: parseInt(d.page, 10) || 1, mime: fl[0].getMimeType(), name: fl[0].getName(), data: Utilities.base64Encode(fl[0].getBlob().getBytes()) };
@@ -845,4 +856,21 @@ function matchHaji_(p, text) {
     var score = hit + 1; if (score > top) { top = score; best = String(r[0]); tie = false; } else if (score === top) tie = true;
   });
   return tie ? '' : best;
+}
+
+
+// ======================= ONE PHONE PER CODE (version 6.5) =======================
+// The pilgrim app sends dev (a random id kept on the phone) and fp (a short summary of the phone: model, screen, settings).
+// First phone to open My Hajj is remembered. Same phone again (same id, or same summary = e.g. Safari and the home-screen
+// icon of the same iPhone) is fine. Any other phone gets err 'device'. Old app versions (no dev) work only while nothing is locked.
+function phoneOk_(p, row, lockText, d) {
+  var dev = String(d.dev || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 40), fp = String(d.fp || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 40);
+  var L = null; try { L = lockText ? JSON.parse(lockText) : null; } catch (x) { L = null; }
+  if (!dev) return !L;
+  var col = PIL_HEAD.indexOf('Phone lock') + 1;
+  if (!L) { p.getRange(row, col).setValue(JSON.stringify({ ids: [dev], fp: fp, on: Utilities.formatDate(new Date(), 'Asia/Kolkata', 'd MMM yyyy, h:mm a') })); return true; }
+  L.ids = L.ids || [];
+  if (L.ids.indexOf(dev) >= 0) return true;
+  if (fp && L.fp && fp === L.fp) { L.ids.push(dev); L.ids = L.ids.slice(-6); p.getRange(row, col).setValue(JSON.stringify(L)); return true; }
+  return false;
 }

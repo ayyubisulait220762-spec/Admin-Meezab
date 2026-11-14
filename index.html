@@ -244,11 +244,17 @@ function renderPilgrims() {
   document.querySelectorAll('.chip').forEach(function (c) { c.onclick = function () { S.filter = c.dataset.f; renderPilgrims(); }; });
   document.querySelectorAll('.pl[data-c]').forEach(function (c) { c.onclick = function () { showPilgrim(c.dataset.c); }; });
 }
+function phoneHtml(p) {
+  var L = null; try { L = p['Phone lock'] ? JSON.parse(p['Phone lock']) : null; } catch (e) {}
+  return L ? '<div class="tog" style="padding:4px 0"><span>🔒 Opened on his phone<br><small style="color:var(--mute)">since ' + esc(L.on || '') + ' · forwarded links will not open</small></span><button class="btn sm sec" id="rph">Reset phone</button></div>'
+           : '<span style="color:var(--mute)">Not opened yet. The first phone that opens his link will be the only one allowed.</span>';
+}
 function shortCode(c) { return String(c || '').replace(/^MZB-?/i, '').replace(/[^A-Z0-9]/gi, '').toUpperCase(); }
 function findP(code) { return (S.pilgrims || []).filter(function (p) { return p.Code === code; })[0]; }
 function waCodeMsg(p) {
   var sc = shortCode(p.Code);
-  return 'Assalamu Alaikum ' + p.Name + ', your Meezab My Hajj code is ' + sc + '\nTap to open your My Hajj page: ' + APP_LINK + '#mh=' + sc;
+  return 'Assalamu Alaikum ' + p.Name + ', your Meezab My Hajj code is ' + sc + '\nTap to open your My Hajj page: ' + APP_LINK + '#mh=' + sc +
+    '\n\nThis code opens on one phone only – please do not forward it.\nTip: tap Install on the page to keep Meezab on your home screen.';
 }
 function mob(p) { var m = String(p.Mobile || '').replace(/\D/g, ''); if (m.length === 12 && m.indexOf('91') === 0) m = m.slice(2); return m; }
 function showPilgrim(code) {
@@ -271,6 +277,7 @@ function showPilgrim(code) {
     '<h2>Flights</h2><div class="card">' + (row('Going flight', p['Going flight']) + row('Going', p['Going date & time']) + row('Airport reporting', p['Airport reporting']) + row('Return flight', p['Return flight']) + row('Return', p['Return date & time']) || '<span style="color:var(--mute)">Not added yet</span>') + '</div>' +
     '<h2>Hotels & rooms</h2><div class="card">' + (row('Makkah', p['Makkah hotel']) + row('Room Makkah', p['Room Makkah']) + row('Madinah', p['Madinah hotel']) + row('Room Madinah', p['Room Madinah']) + row('Shifting', p['Shifting hotel']) + row('Room shifting', p['Room shifting']) || '<span style="color:var(--mute)">Not added yet</span>') + '</div>' +
     (p['Note for pilgrim'] ? '<h2>Note for pilgrim</h2><div class="card" style="white-space:pre-wrap">' + esc(p['Note for pilgrim']) + '</div>' : '') +
+    '<h2>Phone</h2><div class="card" id="phn">' + phoneHtml(p) + '</div>' +
     '<h2>Documents</h2><div class="card" id="docs"><div class="spin" style="margin:10px auto"></div></div>' +
     '<button class="btn sec" id="msgBtn" style="margin-top:6px">Send alert to this pilgrim</button>' +
     '<button class="btn sec" id="ncBtn" style="margin-top:10px">New code (if the code was shared by mistake)</button>' +
@@ -286,6 +293,11 @@ function showPilgrim(code) {
     }).catch(function () { b.disabled = false; b.textContent = 'New code (if the code was shared by mistake)'; toast('Not done – check internet'); });
   };
   loadDocs(p);
+  var rp = $('#rph'); if (rp) rp.onclick = function () {
+    if (!confirm('Reset phone for ' + p.Name + '?\n\nThe next phone that opens his link will be allowed. Use this when he has a new phone or cleared his browser.')) return;
+    rp.disabled = true; api('resetPhone', { data: { code: p.Code } }).then(function (j) { if (!j.ok) throw new Error(); p['Phone lock'] = ''; $('#phn').innerHTML = phoneHtml(p); toast('Phone reset – he can open his link again'); })
+      .catch(function () { rp.disabled = false; toast('Not done – check internet'); });
+  };
   document.querySelectorAll('#cl .tog').forEach(function (t) {
     t.onclick = function () {
       var k = t.dataset.k, sw = $('.sw', t), nv = !sw.classList.contains('on');
