@@ -1,6 +1,6 @@
 // MEEZAB CORE - the real code of the "Meezab leads" Sheet. Loaded automatically by the small loader in the Sheet
 // (Meezab-loader.gs). To update the Sheet, publish a new version of this file on GitHub and raise VERSION. Nothing to paste.
-var VERSION = '6.3';
+var VERSION = '6.4';
 // MEEZAB E RAHEMAT - leads, feedback, news, My Hajj and the Admin meezab app in one Google Sheet.   (version 6.2, 10 Nov 2026)
 // New in 6.2: runs through the self-updating loader (no more copy-paste in the Sheet).
 // New in 6.3: checklist 'Vaccination' renamed 'Vaccine & Medical card', new 'Nusuk card' (last column);
@@ -8,6 +8,8 @@ var VERSION = '6.3';
 //             uploaded from the Admin meezab app, downloaded by the pilgrim in My Hajj; admin 'New code' button;
 //             Haji photo (small copy in the "Haji photos" tab), 2 pages per document, Gender + Family columns,
 //             'Documents' column (filled automatically) for the Records tab of the admin app.
+// New in 6.4: INBOX for bulk upload – many files go into Drive > Meezab pilgrim documents > Inbox, then 'Give to Haji'
+//             moves each one into the pilgrim's folder. The pilgrim gets one automatic alert per day listing new documents.
 // Fix in 6.1: 'Add pilgrim' from the Admin meezab app now saves a NEW row (6.0 wrote over the Pilgrims header row).
 //             The Pilgrims tab repairs itself automatically (header put back on row 1, the pilgrim moves to row 2).
 // New in version 6 - MY HAJJ + ADMIN MEEZAB:
@@ -566,7 +568,7 @@ function admin_(d) {
       var fo = docFolder_(uc, true);
       docFiles_(fo, slot).forEach(function (f) { f.setTrashed(true); });          // one file per page: replace the old one
       fo.createFile(Utilities.newBlob(bytes, mime, slot + '.' + ext));
-      if (key === 'photo') setThumb_(sh.ph, uc, data.thumb);
+      if (key === 'photo') setThumb_(sh.ph, uc, data.thumb); else docAlert_(sh.a, uc, DOC_NAMES[key] + (slot !== key ? ' (page 2)' : ''));
       log_(ss, user, 'upload document', uc + ' ' + DOC_NAMES[key] + (slot !== key ? ' page 2' : '') + ' (' + Math.round(bytes.length / 1024) + ' KB)');
       var ul = docList_(uc, true); docMark_(sh.p, urow, ul);
       return { ok: true, list: ul };
@@ -583,6 +585,48 @@ function admin_(d) {
       log_(ss, user, 'delete document', xc + ' ' + (DOC_NAMES[data.key] || data.key) + (xs && xs !== data.key ? ' page 2' : ''));
       var xl = xf ? docList_(xc, true) : []; if (xrow) docMark_(sh.p, xrow, xl);
       return { ok: true, list: xl };
+    }
+    case 'inboxAdd': {
+      var ik = String(data.key || ''); if (!DOC_NAMES[ik]) return { ok: false, err: 'key' };
+      var im = String(data.mime || '').toLowerCase(), ie = DOC_MIME[im]; if (!ie) return { ok: false, err: 'type' };
+      if (ik === 'photo' && !/^image\//.test(im)) return { ok: false, err: 'type' };
+      var ib; try { ib = Utilities.base64Decode(String(data.data || '')); } catch (x) { return { ok: false, err: 'file' }; }
+      if (!ib.length || ib.length > DOC_MAX) return { ok: false, err: 'size' };
+      var inf = inboxFolder_(true).createFile(Utilities.newBlob(ib, im, ik + '__' + Utilities.getUuid().slice(0, 8) + '.' + ie));
+      var sug = cleanCode_(data.sug);
+      inf.setDescription(JSON.stringify({ name: clean_(data.name, 120), sug: sug, pg: ik !== 'photo' && parseInt(data.page, 10) === 2 ? 2 : 1, by: user, th: thumbOk_(data.thumb) }));
+      log_(ss, user, 'inbox add', DOC_NAMES[ik] + ' ' + clean_(data.name, 80));
+      return { ok: true, item: inboxItem_(inf) };
+    }
+    case 'inbox': {
+      var ifo = inboxFolder_(false), items = [];
+      if (ifo) { var iit = ifo.getFiles(); while (iit.hasNext()) { var ff = iit.next(); if (!ff.isTrashed()) items.push(inboxItem_(ff)); } }
+      items.sort(function (a, b) { return a.t - b.t; });
+      return { ok: true, list: items };
+    }
+    case 'getInbox': {
+      var gi = inboxFile_(data.id); if (!gi) return { ok: false, err: 'none' };
+      return { ok: true, mime: gi.getMimeType(), data: Utilities.base64Encode(gi.getBlob().getBytes()) };
+    }
+    case 'inboxDelete': {
+      var di = inboxFile_(data.id); if (di) { di.setTrashed(true); log_(ss, user, 'inbox delete', di.getName()); }
+      return { ok: true };
+    }
+    case 'inboxGive': {
+      var gf2 = inboxFile_(data.id); if (!gf2) return { ok: false, err: 'none' };
+      var gk = String(gf2.getName()).split('__')[0], gcode = cleanCode_(data.code), grow = gcode ? findRow_(sh.p, gcode) : 0;
+      if (!grow) return { ok: false, err: 'code' };
+      var gslot = slot_(gk, data.page); if (!gslot) return { ok: false, err: 'key' };
+      var gfo = docFolder_(gcode, true);
+      docFiles_(gfo, gslot).forEach(function (f) { f.setTrashed(true); });
+      var gext = String(gf2.getName()).split('.').pop();
+      if (gk === 'photo') { try { setThumb_(sh.ph, gcode, JSON.parse(gf2.getDescription() || '{}').th); } catch (x) {} }
+      gf2.setName(gslot + '.' + gext); gf2.setDescription(''); gf2.moveTo(gfo);
+      var gl2 = docList_(gcode, true); docMark_(sh.p, grow, gl2);
+      var gname = sh.p.getRange(grow, 3).getValue();
+      log_(ss, user, 'give document', gcode + ' ' + DOC_NAMES[gk] + (gslot !== gk ? ' page 2' : ''));
+      if (gk !== 'photo') docAlert_(sh.a, gcode, DOC_NAMES[gk] + (gslot !== gk ? ' (page 2)' : ''));
+      return { ok: true, code: gcode, name: str_(gname), doc: DOC_NAMES[gk], list: gl2 };
     }
     case 'newCode': {                                            // replaces a leaked code; the old one stops working
       var oc = cleanCode_(data.code), orow = oc ? findRow_(sh.p, oc) : 0;
@@ -706,4 +750,47 @@ function myHajjDoc_(d) {
   var fl = docFiles_(docFolder_(code, false), slot_(d.key, d.page));
   if (!fl.length) return { ok: false, err: 'none' };
   return { ok: true, key: d.key, page: parseInt(d.page, 10) || 1, mime: fl[0].getMimeType(), name: fl[0].getName(), data: Utilities.base64Encode(fl[0].getBlob().getBytes()) };
+}
+
+
+// ======================= INBOX + AUTOMATIC DOCUMENT ALERT (version 6.4) =======================
+function thumbOk_(t) { t = String(t || '').replace(/[^A-Za-z0-9+/=]/g, ''); return t.length <= 10000 ? t : ''; }   // small preview kept with the file
+function inboxFolder_(create) {
+  var root = docRoot_(create); if (!root) return null;
+  var it = root.getFoldersByName('Inbox');
+  while (it.hasNext()) { var f = it.next(); if (!f.isTrashed()) return f; }
+  return create ? root.createFolder('Inbox') : null;
+}
+function inboxFile_(id) {
+  id = String(id || ''); if (!/^[A-Za-z0-9_-]{10,}$/.test(id)) return null;
+  var f; try { f = DriveApp.getFileById(id); } catch (x) { return null; }
+  var fo = inboxFolder_(false); if (!fo || f.isTrashed()) return null;
+  var ps = f.getParents(), inside = false;
+  while (ps.hasNext()) if (ps.next().getId() === fo.getId()) inside = true;   // only files that are really in the Inbox
+  return inside ? f : null;
+}
+function inboxItem_(f) {
+  var d = {}; try { d = JSON.parse(f.getDescription() || '{}'); } catch (x) {}
+  return { id: f.getId(), key: String(f.getName()).split('__')[0], name: d.name || f.getName(), sug: d.sug || '', pg: d.pg === 2 ? 2 : 1, by: d.by || '',
+           mime: f.getMimeType(), size: f.getSize(), th: d.th || '', on: str_(f.getDateCreated()), t: f.getDateCreated().getTime() };
+}
+// One alert per Haji per day: "New documents in My Hajj: Visa, Departure ticket – you can download them."
+function docAlert_(a, code, docName) {
+  try {
+    var today = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd'), last = a.getLastRow(), row = 0, list = [];
+    if (last > 1) {
+      var rows = a.getRange(2, 1, last - 1, 6).getValues();
+      for (var i = rows.length - 1; i >= 0; i--) {
+        var r = rows[i], d = r[0] instanceof Date ? Utilities.formatDate(r[0], 'Asia/Kolkata', 'yyyy-MM-dd') : '';
+        if (String(r[1]).toUpperCase() === code && String(r[5]) === 'auto-docs' && d === today) {
+          row = i + 2; var m = /: (.*) – you can/.exec(String(r[3])); if (m) list = m[1].split(', '); break;
+        }
+      }
+    }
+    if (list.indexOf(docName) < 0) list.push(docName);
+    var title = 'New documents in My Hajj', msg = 'New documents in My Hajj: ' + list.join(', ') + ' – you can download them.';
+    var tr = function (s, l) { try { return LanguageApp.translate(s, 'en', l); } catch (x) { return ''; } };
+    var vals = [new Date(), code, title, msg, 'yes', 'auto-docs', tr(title, 'ur'), tr(title, 'hi'), tr(title, 'gu'), tr(msg, 'ur'), tr(msg, 'hi'), tr(msg, 'gu')];
+    if (row) a.getRange(row, 1, 1, vals.length).setValues([vals]); else a.appendRow(vals);
+  } catch (x) {}
 }

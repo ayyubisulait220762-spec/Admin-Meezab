@@ -95,6 +95,9 @@ nav button.on{color:var(--g2)}
 .lt th{text-align:start;color:var(--g2);font-weight:600;padding:7px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
 .lt td{padding:7px 6px;border-bottom:1px solid #221e26;vertical-align:top}
 .lt tr:last-child td{border-bottom:0}
+.ith{width:74px;height:96px;flex:none;border-radius:10px;border:1px solid var(--line);background:#fff;overflow:hidden;padding:0;display:grid;place-items:center;color:#555;font-weight:700;font-size:12px}
+.ith img{width:100%;height:100%;object-fit:cover}
+optgroup{color:var(--mute)}
 .demo{background:#3a2b0b;color:var(--g1);font-size:12px;text-align:center;padding:4px}
 </style>
 </head>
@@ -489,11 +492,12 @@ function recordsView(force) {
 }
 function renderRecords() {
   var t = S.recTab, h = '<div class="chips"><button class="chip' + (t === 'docs' ? ' on' : '') + '" data-rt="docs">Documents</button><button class="chip' + (t === 'lists' ? ' on' : '') + '" data-rt="lists">Lists</button>' +
+    '<button class="chip' + (t === 'inbox' ? ' on' : '') + '" data-rt="inbox">Inbox' + (S.inbox ? ' (' + S.inbox.length + ')' : '') + '</button>' +
     '<button class="chip" data-rt="refresh" style="margin-inline-start:auto">↻ Refresh</button></div>';
   $('#main').innerHTML = h + '<div id="rec"></div>';
   document.querySelectorAll('[data-rt]').forEach(function (b) { b.onclick = function () {
     if (b.dataset.rt === 'refresh') { recordsView(true); return; } S.recTab = b.dataset.rt; renderRecords(); }; });
-  if (t === 'docs') renderBoard(); else renderLists();
+  if (t === 'docs') renderBoard(); else if (t === 'inbox') inboxView(); else renderLists();
 }
 function renderBoard() {
   var A = activeP(), m = S.missing || '';
@@ -576,6 +580,177 @@ function printList(L) {
       sec.rows.map(function (r) { return '<tr>' + r.map(function (v) { return '<td>' + e(v) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table>' : ''); }).join('') +
     '<script>setTimeout(function(){print()},400)<\/script></body></html>');
   w.document.close();
+}
+
+// ---------- INBOX: bulk upload (many files / zip / folder) -> give each file to a Haji ----------
+var LIB = { pdf: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js', pdfw: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
+            zip: 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js' };
+function loadLib(u) { loadLib.p = loadLib.p || {}; return loadLib.p[u] || (loadLib.p[u] = new Promise(function (ok, no) { var s = document.createElement('script'); s.src = u; s.onload = ok; s.onerror = function () { delete loadLib.p[u]; no(new Error('Could not load a helper – check internet')); }; document.head.appendChild(s); })); }
+function pdfLib() { return loadLib(LIB.pdf).then(function () { window.pdfjsLib.GlobalWorkerOptions.workerSrc = LIB.pdfw; return window.pdfjsLib; }); }
+function blobB64(b) { return new Promise(function (ok, no) { var r = new FileReader(); r.onload = function () { ok(String(r.result).split(',')[1]); }; r.onerror = no; r.readAsDataURL(b); }); }
+function canvasThumb(src, w0, h0, max) { var k = Math.min(1, max / Math.max(w0, h0)), c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w0 * k)); c.height = Math.max(1, Math.round(h0 * k));
+  var x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(src, 0, 0, c.width, c.height);
+  var q = 0.7, t = c.toDataURL('image/jpeg', q).split(',')[1]; while (t.length > 9800 && q > 0.25) { q -= 0.1; t = c.toDataURL('image/jpeg', q).split(',')[1]; } return t.length <= 9800 ? t : ''; }
+// PDF: reads the text of the first 2 pages (to find the passenger name) and draws page 1 small for the preview.
+function readPdf(blob) {
+  return pdfLib().then(function (lib) { return blob.arrayBuffer().then(function (ab) { return lib.getDocument({ data: new Uint8Array(ab) }).promise; }); })
+    .then(function (doc) {
+      var n = Math.min(2, doc.numPages), texts = [], thumb = '';
+      var page = function (i) { return doc.getPage(i).then(function (pg) {
+        return pg.getTextContent().then(function (tc) { texts.push(tc.items.map(function (it) { return it.str; }).join(' ')); if (i > 1) return;
+          var vp = pg.getViewport({ scale: 1 }), sc = 420 / Math.max(vp.width, vp.height), v2 = pg.getViewport({ scale: sc }), c = document.createElement('canvas');
+          c.width = v2.width; c.height = v2.height; var x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+          return pg.render({ canvasContext: x, viewport: v2 }).promise.then(function () { thumb = canvasThumb(c, c.width, c.height, 200); }); }); }); };
+      var chain = Promise.resolve(); for (var i = 1; i <= n; i++) chain = chain.then(page.bind(null, i));
+      return chain.then(function () { return { text: texts.join(' '), thumb: thumb }; });
+    }).catch(function () { return { text: '', thumb: '' }; });
+}
+function readImg(blob, isPhoto) {
+  return new Promise(function (ok, no) {
+    var img = new Image(), u = URL.createObjectURL(blob);
+    img.onload = function () {
+      var w = img.naturalWidth, h = img.naturalHeight, m = isPhoto ? 1200 : 1800, k = Math.min(1, m / Math.max(w, h)), c = document.createElement('canvas');
+      c.width = Math.round(w * k); c.height = Math.round(h * k); var x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0, c.width, c.height);
+      var th;
+      if (isPhoto) { var s = Math.min(w, h), c2 = document.createElement('canvas'); c2.width = c2.height = 200; var x2 = c2.getContext('2d'); x2.drawImage(img, (w - s) / 2, Math.max(0, (h - s) / 3), s, s, 0, 0, 200, 200); th = canvasThumb(c2, 200, 200, 200); }
+      else th = canvasThumb(img, w, h, 200);
+      URL.revokeObjectURL(u); ok({ mime: 'image/jpeg', data: c.toDataURL('image/jpeg', 0.82).split(',')[1], thumb: th });
+    };
+    img.onerror = function () { URL.revokeObjectURL(u); no(new Error('not a photo')); };
+    img.src = u;
+  });
+}
+// Finds the Haji whose name appears in the text (e.g. inside an e-visa PDF). Returns a code or ''.
+function normWords(t) { return String(t || '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim().split(' ').filter(Boolean); }
+function matchHaji(text) {
+  var code = /MZB[\s-]*([A-Z0-9]{4})[\s-]*([A-Z0-9]{2})\b/i.exec(text || ''); if (code) { var c = ('MZB-' + code[1] + '-' + code[2]).toUpperCase(); if (findP(c)) return c; }
+  var words = {}; normWords(text).forEach(function (w) { words[w] = 1; });
+  var best = '', top = 0, tie = false;
+  activeP().forEach(function (p) {
+    var nw = normWords(p.Name).filter(function (w) { return w.length >= 3 && !/^(HAJI|HAJJAN|MOHD|MD|SHAIKH|SHEIKH|BIN|BINTI|BEGUM|BIBI|KHATOON)$/.test(w); });
+    if (!nw.length) nw = normWords(p.Name).filter(function (w) { return w.length >= 3; });
+    if (!nw.length) return;
+    var hit = nw.filter(function (w) { return words[w]; }).length, sc = hit / nw.length;
+    if (hit < Math.min(2, nw.length) || sc < 0.99) return;            // every main word of the name must appear
+    var score = hit + sc; if (score > top) { top = score; best = p.Code; tie = false; } else if (score === top) tie = true;
+  });
+  return tie ? '' : best;
+}
+function expandFiles(files) {           // zip files are opened; only photos and PDFs are kept
+  var out = [], chain = Promise.resolve();
+  Array.prototype.forEach.call(files, function (f) { chain = chain.then(function () {
+    if (/\.zip$/i.test(f.name) || /zip/.test(f.type)) return loadLib(LIB.zip).then(function () { return window.JSZip.loadAsync(f); }).then(function (z) {
+      var ents = []; z.forEach(function (path, e) { if (!e.dir && /\.(pdf|jpe?g|png|webp)$/i.test(path) && !/(^|\/)(__MACOSX|\.)/.test(path)) ents.push(e); });
+      return ents.reduce(function (pr, e) { return pr.then(function () { return e.async('blob').then(function (b) {
+        var ext = e.name.split('.').pop().toLowerCase(), mime = ext === 'pdf' ? 'application/pdf' : ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+        out.push({ name: e.name.split('/').pop(), blob: new Blob([b], { type: mime }) }); }); }); }, Promise.resolve());
+    });
+    if (/\.(pdf|jpe?g|png|webp|heic)$/i.test(f.name) || /^image\/|pdf/.test(f.type)) out.push({ name: f.name, blob: f });
+  }); });
+  return chain.then(function () { return out; });
+}
+function bulkUpload(files, key) {
+  var st = $('#bst'), done = 0, bad = [];
+  st.textContent = 'Opening files…';
+  return expandFiles(files).then(function (L) {
+    if (!L.length) { st.textContent = 'No photos or PDF files found.'; return; }
+    return L.reduce(function (pr, f, i) { return pr.then(function () {
+      st.textContent = 'Uploading ' + (i + 1) + ' of ' + L.length + ' – ' + f.name;
+      var isPdf = f.blob.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+      if (isPdf && key === 'photo') { bad.push(f.name + ' (Haji photo must be a photo)'); return; }
+      if (f.blob.size > 8 * 1048576 && isPdf) { bad.push(f.name + ' (over 8 MB)'); return; }
+      var prep = isPdf ? Promise.all([blobB64(f.blob), readPdf(f.blob)]).then(function (r) { return { mime: 'application/pdf', data: r[0], thumb: r[1].thumb, sug: matchHaji(r[1].text + ' ' + f.name) }; })
+                       : readImg(f.blob, key === 'photo').then(function (o) { o.sug = matchHaji(f.name.replace(/\.[a-z]+$/i, '')); return o; });
+      return prep.then(function (o) { return api('inboxAdd', { data: { key: key, page: S.bpage || 1, mime: o.mime, data: o.data, name: f.name, sug: o.sug, thumb: o.thumb } }); })
+        .then(function (j) { if (!j.ok) throw new Error(j.err); if (!S.inbox.some(function (x) { return x.id === j.item.id; })) S.inbox.push(j.item); done++; })
+        .catch(function (e) { bad.push(f.name + (e && e.message === 'size' ? ' (too big)' : e && e.message === 'not a photo' ? ' (could not read photo)' : '')); });
+    }); }, Promise.resolve()).then(function () {
+      st.innerHTML = '✓ ' + done + ' file' + (done === 1 ? '' : 's') + ' added to the Inbox.' + (bad.length ? '<br><span style="color:var(--bad)">Not added: ' + bad.map(esc).join(', ') + '</span>' : '');
+      toast(done + ' in Inbox'); renderInboxList();
+    });
+  }).catch(function (e) { st.textContent = (e && e.message) || 'Upload stopped – check internet'; });
+}
+function inboxView() {
+  var h = '<div class="card"><b>Bulk upload</b><div style="color:var(--mute);font-size:13px;margin:4px 0 10px">Choose the document type, then select all its files at once – photos, PDFs or a zip. PDFs with the name inside are matched to the Haji automatically.</div>' +
+    '<label class="lbl" for="bkey">Document type</label><select id="bkey">' + DOCS.map(function (d) { return '<option value="' + d[0] + '"' + (S.bkey === d[0] ? ' selected' : '') + '>' + d[1] + '</option>'; }).join('') + '</select>' +
+    '<label class="lbl" for="bpg">These files are</label><select id="bpg"><option value="1">Page 1 (front / main page)</option><option value="2"' + (S.bpage === 2 ? ' selected' : '') + '>Page 2 (back side)</option></select>' +
+    '<div class="row" style="margin-top:10px"><button class="btn" id="bpick">Choose files</button>' + ('webkitdirectory' in document.createElement('input') ? '<button class="btn sec" id="bdir">Choose folder</button>' : '') + '</div>' +
+    '<input type="file" id="bfiles" multiple accept="image/*,application/pdf,.zip,application/zip" class="hide"><input type="file" id="bfold" webkitdirectory multiple class="hide">' +
+    '<div id="bst" style="font-size:13px;margin-top:10px;color:var(--g1)"></div></div><div id="ibl"><div class="spin"></div></div>';
+  $('#rec').innerHTML = h;
+  $('#bkey').onchange = function () { S.bkey = this.value; $('#bpg').disabled = this.value === 'photo'; if (this.value === 'photo') { $('#bpg').value = '1'; S.bpage = 1; } };
+  $('#bpg').onchange = function () { S.bpage = +this.value || 1; };
+  var go2 = function (inp) { var fs = inp.files; if (!fs || !fs.length) return; var k = $('#bkey').value; S.bkey = k; $('#bpick').disabled = true; bulkUpload(fs, k).then(function () { $('#bpick').disabled = false; inp.value = ''; }); };
+  $('#bpick').onclick = function () { $('#bfiles').click(); }; $('#bfiles').onchange = function () { go2(this); };
+  if ($('#bdir')) { $('#bdir').onclick = function () { $('#bfold').click(); }; $('#bfold').onchange = function () { go2(this); }; }
+  api('inbox').then(function (j) { if (!j.ok) throw new Error(); S.inbox = j.list; renderInboxList(); updInboxChip(); })
+    .catch(function () { $('#ibl').innerHTML = '<div class="empty">Could not load the Inbox. <button class="btn sm sec" onclick="inboxView()">Try again</button></div>'; });
+}
+function updInboxChip() { var c = $('[data-rt="inbox"]'); if (c && S.inbox) c.textContent = 'Inbox (' + S.inbox.length + ')'; }
+
+function hajiOptions(it) {
+  var A = activeP().slice().sort(byName), sug = it.sug && findP(it.sug) ? [findP(it.sug)] : [];
+  var miss = A.filter(function (p) { return p.Code !== it.sug && !hasDoc(p, it.key); }), have = A.filter(function (p) { return p.Code !== it.sug && hasDoc(p, it.key); });
+  var o = function (p, tag) { return '<option value="' + esc(p.Code) + '">' + tag + esc(p.Name) + ' – ' + esc(p.Code) + '</option>'; };
+  return '<option value="">Give to… (choose Haji)</option>' + sug.map(function (p) { return o(p, '★ '); }).join('') +
+    (miss.length ? '<optgroup label="Missing this document">' + miss.map(function (p) { return o(p, ''); }).join('') + '</optgroup>' : '') +
+    (have.length ? '<optgroup label="Already has it (will add / replace)">' + have.map(function (p) { return o(p, ''); }).join('') + '</optgroup>' : '');
+}
+function renderInboxList() {
+  var b = $('#ibl'); if (!b) return; updInboxChip();
+  var L = S.inbox || [], f = S.ifilter || '', list = f ? L.filter(function (x) { return x.key === f; }) : L, matched = list.filter(function (x) { return x.sug && findP(x.sug); });
+  if (!L.length) { b.innerHTML = '<div class="empty">The Inbox is empty.<br>Use Bulk upload above.</div>'; return; }
+  var types = {}; L.forEach(function (x) { types[x.key] = (types[x.key] || 0) + 1; });
+  b.innerHTML = '<div class="chips" style="flex-wrap:wrap"><button class="chip' + (!f ? ' on' : '') + '" data-if="">All ' + L.length + '</button>' + DOCS.filter(function (d) { return types[d[0]]; }).map(function (d) {
+      return '<button class="chip' + (f === d[0] ? ' on' : '') + '" data-if="' + d[0] + '">' + d[1] + ' ' + types[d[0]] + '</button>'; }).join('') + '</div>' +
+    (matched.length ? '<button class="btn" id="gall" style="margin-bottom:10px">Give all matched (' + matched.length + ')</button>' : '') +
+    list.map(function (it) {
+      var p = it.sug && findP(it.sug);
+      return '<div class="card ibx" data-id="' + esc(it.id) + '"><div style="display:flex;gap:12px">' +
+        '<button class="ith" data-iv="' + esc(it.id) + '" aria-label="Open">' + (it.th ? '<img src="data:image/jpeg;base64,' + it.th + '" alt="">' : '<span>' + (it.mime === 'application/pdf' ? 'PDF' : 'Photo') + '</span>') + '</button>' +
+        '<div style="flex:1;min-width:0"><div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(it.name) + '</div>' +
+        '<div style="font-size:12px;color:var(--mute)">' + docName(it.key) + ' · ' + kb(it.size) + ' · by ' + esc(NAMES[it.by] || it.by) + '</div>' +
+        (p ? '<div style="font-size:12px;color:var(--ok);margin-top:3px">★ Matched: ' + esc(p.Name) + '</div>' : '<div style="font-size:12px;color:var(--warn);margin-top:3px">Not matched – tap the preview, then choose the Haji</div>') +
+        '</div><button class="btn sm sec" data-idel="' + esc(it.id) + '" aria-label="Delete" style="align-self:flex-start">✕</button></div>' +
+        '<div class="row" style="margin-top:10px"><select data-ihaji="' + esc(it.id) + '" style="flex:3">' + hajiOptions(it) + '</select>' +
+        (it.key !== 'photo' ? '<select data-ipg="' + esc(it.id) + '" style="flex:1.3"><option value="1">Page 1</option><option value="2">Page 2</option></select>' : '') + '</div>' +
+        '<button class="btn" data-igive="' + esc(it.id) + '" style="margin-top:8px"' + (p ? '' : ' disabled') + '>Give to Haji</button></div>';
+    }).join('');
+  b.querySelectorAll('[data-if]').forEach(function (c) { c.onclick = function () { S.ifilter = c.dataset.if; renderInboxList(); }; });
+  b.querySelectorAll('[data-ihaji]').forEach(function (sel) {
+    var id = sel.dataset.ihaji, it = L.filter(function (x) { return x.id === id; })[0], pg = b.querySelector('[data-ipg="' + id + '"]'), gb = b.querySelector('[data-igive="' + id + '"]');
+    if (pg) pg.value = String(it.key !== 'photo' && +it.pg === 2 ? 2 : 1);
+    var upd = function () { var p = findP(sel.value); gb.disabled = !p; gb.textContent = p ? 'Give to ' + p.Name : 'Give to Haji'; };
+    if (it.sug && findP(it.sug)) sel.value = it.sug; upd(); sel.onchange = upd;
+  });
+  b.querySelectorAll('[data-igive]').forEach(function (x) { x.onclick = function () { giveOne(x.dataset.igive); }; });
+  b.querySelectorAll('[data-idel]').forEach(function (x) { x.onclick = function () {
+    if (!confirm('Delete this file from the Inbox?')) return; x.disabled = true;
+    api('inboxDelete', { data: { id: x.dataset.idel } }).then(function () { S.inbox = S.inbox.filter(function (i) { return i.id !== x.dataset.idel; }); renderInboxList(); toast('Deleted'); }).catch(function () { x.disabled = false; toast('Not deleted'); });
+  }; });
+  b.querySelectorAll('[data-iv]').forEach(function (x) { x.onclick = function () {
+    var w = window.open('', '_blank');
+    api('getInbox', { data: { id: x.dataset.iv } }).then(function (j) { if (!j.ok) throw new Error(); var u = URL.createObjectURL(b64Blob(j.data, j.mime)); if (w) w.location = u; else location.href = u; })
+      .catch(function () { if (w) w.close(); toast('Could not open'); });
+  }; });
+  var ga = $('#gall'); if (ga) ga.onclick = function () {
+    ga.disabled = true; var ids = matched.map(function (x) { return x.id; }), n = 0;
+    ids.reduce(function (pr, id) { return pr.then(function () { ga.textContent = 'Giving ' + (++n) + ' of ' + ids.length + '…'; return giveOne(id, true); }); }, Promise.resolve())
+      .then(function () { toast('Done – ' + ids.length + ' given'); renderInboxList(); });
+  };
+}
+function giveOne(id, quiet) {
+  var sel = $('[data-ihaji="' + id + '"]'), pg = $('[data-ipg="' + id + '"]'), gb = $('[data-igive="' + id + '"]');
+  var code = sel ? sel.value : '', p = findP(code); if (!p) return Promise.resolve();
+  if (gb) { gb.disabled = true; gb.textContent = 'Giving…'; }
+  return api('inboxGive', { data: { id: id, code: code, page: pg ? +pg.value : 1 } }).then(function (j) {
+    if (!j.ok) throw new Error(j.err);
+    syncDocs(p, j.list); S.inbox = S.inbox.filter(function (i) { return i.id !== id; });
+    var card = $('.ibx[data-id="' + id + '"]'); if (card) card.outerHTML = '<div class="card" style="color:var(--ok);font-weight:600">✓ ' + esc(j.doc) + ' uploaded for ' + esc(j.name) + '</div>';
+    if (!quiet) toast(j.doc + ' uploaded for ' + j.name + ' ✓');
+    if (j.doc === 'Haji photo') getPilgrims(true);
+    updInboxChip();
+  }).catch(function (e) { if (gb) { gb.disabled = false; gb.textContent = 'Give to ' + p.Name; } toast(e && e.message === 'none' ? 'Already given' : 'Not given – check internet'); });
 }
 
 // ---------- alerts ----------
@@ -702,6 +877,18 @@ function demoApi(b) {
       P.Documents = cur.join(',');
       return { ok: true, list: cur.map(function (x) { return { key: x.replace('-2', ''), page: /-2$/.test(x) ? 2 : 1, size: 230000, mime: x === 'passport' ? 'application/pdf' : 'image/jpeg', on: '15 Nov 2026, 2:10 am' }; }) };
     }
+    case 'inbox': return { ok: true, list: (D.inbox = D.inbox || []) };
+    case 'inboxAdd': { D.inbox = D.inbox || []; D.blobs = D.blobs || {}; var id = 'demo' + Math.random().toString(36).slice(2, 12);
+      D.blobs[id] = { data: b.data.data, mime: b.data.mime };
+      var item = { id: id, key: b.data.key, pg: b.data.page === 2 ? 2 : 1, name: b.data.name, sug: b.data.sug || '', by: b.user, mime: b.data.mime, size: Math.round(b.data.data.length * 0.75), th: b.data.thumb || '', on: 'now', t: Date.now() };
+      D.inbox.push(item); return { ok: true, item: item }; }
+    case 'getInbox': return Object.assign({ ok: true }, (D.blobs || {})[b.data.id]);
+    case 'inboxDelete': D.inbox = (D.inbox || []).filter(function (x) { return x.id !== b.data.id; }); return { ok: true };
+    case 'inboxGive': { var it = (D.inbox || []).filter(function (x) { return x.id === b.data.id; })[0]; if (!it) return { ok: false, err: 'none' };
+      D.inbox = D.inbox.filter(function (x) { return x !== it; });
+      var r2 = demoApi({ action: 'uploadDoc', user: b.user, data: { code: b.data.code, key: it.key, page: b.data.page, thumb: it.th, mime: it.mime, data: '' } });
+      var P2 = D.list.filter(function (x) { return x.Code === b.data.code; })[0];
+      return { ok: true, code: b.data.code, name: P2.Name, doc: DOCS.filter(function (d) { return d[0] === it.key; })[0][1], list: r2.list }; }
     default: return { ok: true };
   }
 }
