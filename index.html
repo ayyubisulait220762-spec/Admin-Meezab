@@ -655,7 +655,7 @@ function bulkUpload(files, key) {
   return expandFiles(files).then(function (L) {
     if (!L.length) { st.textContent = 'No photos or PDF files found.'; return; }
     return L.reduce(function (pr, f, i) { return pr.then(function () {
-      st.textContent = 'Uploading ' + (i + 1) + ' of ' + L.length + ' – ' + f.name;
+      st.textContent = 'Uploading & reading ' + (i + 1) + ' of ' + L.length + ' – ' + f.name;
       var isPdf = f.blob.type === 'application/pdf' || /\.pdf$/i.test(f.name);
       if (isPdf && key === 'photo') { bad.push(f.name + ' (Haji photo must be a photo)'); return; }
       if (f.blob.size > 8 * 1048576 && isPdf) { bad.push(f.name + ' (over 8 MB)'); return; }
@@ -671,7 +671,7 @@ function bulkUpload(files, key) {
   }).catch(function (e) { st.textContent = (e && e.message) || 'Upload stopped – check internet'; });
 }
 function inboxView() {
-  var h = '<div class="card"><b>Bulk upload</b><div style="color:var(--mute);font-size:13px;margin:4px 0 10px">Choose the document type, then select all its files at once – photos, PDFs or a zip. PDFs with the name inside are matched to the Haji automatically.</div>' +
+  var h = '<div class="card"><b>Bulk upload</b><div style="color:var(--mute);font-size:13px;margin:4px 0 10px">Choose the document type, then select all its files at once – photos, PDFs or a zip. The name written on each visa / ticket is read and matched to the Haji automatically (clear photos work best).</div>' +
     '<label class="lbl" for="bkey">Document type</label><select id="bkey">' + DOCS.map(function (d) { return '<option value="' + d[0] + '"' + (S.bkey === d[0] ? ' selected' : '') + '>' + d[1] + '</option>'; }).join('') + '</select>' +
     '<label class="lbl" for="bpg">These files are</label><select id="bpg"><option value="1">Page 1 (front / main page)</option><option value="2"' + (S.bpage === 2 ? ' selected' : '') + '>Page 2 (back side)</option></select>' +
     '<div class="row" style="margin-top:10px"><button class="btn" id="bpick">Choose files</button>' + ('webkitdirectory' in document.createElement('input') ? '<button class="btn sec" id="bdir">Choose folder</button>' : '') + '</div>' +
@@ -710,7 +710,7 @@ function renderInboxList() {
         '<button class="ith" data-iv="' + esc(it.id) + '" aria-label="Open">' + (it.th ? '<img src="data:image/jpeg;base64,' + it.th + '" alt="">' : '<span>' + (it.mime === 'application/pdf' ? 'PDF' : 'Photo') + '</span>') + '</button>' +
         '<div style="flex:1;min-width:0"><div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(it.name) + '</div>' +
         '<div style="font-size:12px;color:var(--mute)">' + docName(it.key) + ' · ' + kb(it.size) + ' · by ' + esc(NAMES[it.by] || it.by) + '</div>' +
-        (p ? '<div style="font-size:12px;color:var(--ok);margin-top:3px">★ Matched: ' + esc(p.Name) + '</div>' : '<div style="font-size:12px;color:var(--warn);margin-top:3px">Not matched – tap the preview, then choose the Haji</div>') +
+        (p ? '<div style="font-size:12px;color:var(--ok);margin-top:3px">★ Matched: ' + esc(p.Name) + '</div>' : '<div style="font-size:12px;color:var(--warn);margin-top:3px">' + (it.ocr === 'nomatch' ? 'Text read, but no Haji name found' : it.ocr === 'failed' ? 'Could not read the text' : 'Not matched') + ' – tap the preview, then choose the Haji</div>') +
         '</div><button class="btn sm sec" data-idel="' + esc(it.id) + '" aria-label="Delete" style="align-self:flex-start">✕</button></div>' +
         '<div class="row" style="margin-top:10px"><select data-ihaji="' + esc(it.id) + '" style="flex:3">' + hajiOptions(it) + '</select>' +
         (it.key !== 'photo' ? '<select data-ipg="' + esc(it.id) + '" style="flex:1.3"><option value="1">Page 1</option><option value="2">Page 2</option></select>' : '') + '</div>' +
@@ -880,7 +880,8 @@ function demoApi(b) {
     case 'inbox': return { ok: true, list: (D.inbox = D.inbox || []) };
     case 'inboxAdd': { D.inbox = D.inbox || []; D.blobs = D.blobs || {}; var id = 'demo' + Math.random().toString(36).slice(2, 12);
       D.blobs[id] = { data: b.data.data, mime: b.data.mime };
-      var item = { id: id, key: b.data.key, pg: b.data.page === 2 ? 2 : 1, name: b.data.name, sug: b.data.sug || '', by: b.user, mime: b.data.mime, size: Math.round(b.data.data.length * 0.75), th: b.data.thumb || '', on: 'now', t: Date.now() };
+      var dsug = b.data.sug || (b.data.key !== 'photo' && /\.jpe?g$/i.test(b.data.name) ? 'MZB-2RVE-7M' : '');
+      var item = { id: id, key: b.data.key, pg: b.data.page === 2 ? 2 : 1, name: b.data.name, sug: dsug, ocr: b.data.sug ? '' : (dsug ? 'matched' : 'nomatch'), by: b.user, mime: b.data.mime, size: Math.round(b.data.data.length * 0.75), th: b.data.thumb || '', on: 'now', t: Date.now() };
       D.inbox.push(item); return { ok: true, item: item }; }
     case 'getInbox': return Object.assign({ ok: true }, (D.blobs || {})[b.data.id]);
     case 'inboxDelete': D.inbox = (D.inbox || []).filter(function (x) { return x.id !== b.data.id; }); return { ok: true };

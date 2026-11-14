@@ -10,6 +10,7 @@ var VERSION = '6.4';
 //             'Documents' column (filled automatically) for the Records tab of the admin app.
 // New in 6.4: INBOX for bulk upload – many files go into Drive > Meezab pilgrim documents > Inbox, then 'Give to Haji'
 //             moves each one into the pilgrim's folder. The pilgrim gets one automatic alert per day listing new documents.
+//             Photos and scanned PDFs: Google Drive reads the text in them (OCR) to find the Haji's name automatically.
 // Fix in 6.1: 'Add pilgrim' from the Admin meezab app now saves a NEW row (6.0 wrote over the Pilgrims header row).
 //             The Pilgrims tab repairs itself automatically (header put back on row 1, the pilgrim moves to row 2).
 // New in version 6 - MY HAJJ + ADMIN MEEZAB:
@@ -161,7 +162,11 @@ function doPost(e) {
   var d;
   try { d = JSON.parse(e && e.postData && e.postData.contents || ''); } catch (x) { return out_('bad request'); }
   if (!d || typeof d !== 'object') return out_('bad request');
-  if (d.type === 'myhajj' || d.type === 'admin' || d.type === 'myhajjdoc') {
+  if (d.type === 'myhajjdoc' || (d.type === 'admin' && (d.action === 'inboxAdd' || d.action === 'getInbox' || d.action === 'getDoc'))) {
+    try { return json_(d.type === 'myhajjdoc' ? myHajjDoc_(d) : admin_(d)); }       // big files / text reading: no queue for others
+    catch (x) { return json_({ ok: false, err: 'error' }); }
+  }
+  if (d.type === 'myhajj' || d.type === 'admin') {
     var lk = LockService.getScriptLock();
     try { lk.waitLock(20000); } catch (x) { return json_({ ok: false, err: 'busy' }); }
     try { return json_(d.type === 'myhajj' ? myHajj_(d) : d.type === 'myhajjdoc' ? myHajjDoc_(d) : admin_(d)); }
@@ -593,8 +598,12 @@ function admin_(d) {
       var ib; try { ib = Utilities.base64Decode(String(data.data || '')); } catch (x) { return { ok: false, err: 'file' }; }
       if (!ib.length || ib.length > DOC_MAX) return { ok: false, err: 'size' };
       var inf = inboxFolder_(true).createFile(Utilities.newBlob(ib, im, ik + '__' + Utilities.getUuid().slice(0, 8) + '.' + ie));
-      var sug = cleanCode_(data.sug);
-      inf.setDescription(JSON.stringify({ name: clean_(data.name, 120), sug: sug, pg: ik !== 'photo' && parseInt(data.page, 10) === 2 ? 2 : 1, by: user, th: thumbOk_(data.thumb) }));
+      var sug = cleanCode_(data.sug), ocr = '';
+      if (!sug && ik !== 'photo') {                     // no name found on the phone: let Google read the text in the photo / scanned PDF
+        var txt = ocr_(ib, im);
+        if (txt === null) ocr = 'failed'; else { sug = matchHaji_(sh.p, txt + ' ' + String(data.name || '')); ocr = sug ? 'matched' : 'nomatch'; }
+      }
+      inf.setDescription(JSON.stringify({ name: clean_(data.name, 120), sug: sug, ocr: ocr, pg: ik !== 'photo' && parseInt(data.page, 10) === 2 ? 2 : 1, by: user, th: thumbOk_(data.thumb) }));
       log_(ss, user, 'inbox add', DOC_NAMES[ik] + ' ' + clean_(data.name, 80));
       return { ok: true, item: inboxItem_(inf) };
     }
@@ -771,7 +780,7 @@ function inboxFile_(id) {
 }
 function inboxItem_(f) {
   var d = {}; try { d = JSON.parse(f.getDescription() || '{}'); } catch (x) {}
-  return { id: f.getId(), key: String(f.getName()).split('__')[0], name: d.name || f.getName(), sug: d.sug || '', pg: d.pg === 2 ? 2 : 1, by: d.by || '',
+  return { id: f.getId(), key: String(f.getName()).split('__')[0], name: d.name || f.getName(), sug: d.sug || '', ocr: d.ocr || '', pg: d.pg === 2 ? 2 : 1, by: d.by || '',
            mime: f.getMimeType(), size: f.getSize(), th: d.th || '', on: str_(f.getDateCreated()), t: f.getDateCreated().getTime() };
 }
 // One alert per Haji per day: "New documents in My Hajj: Visa, Departure ticket – you can download them."
@@ -793,4 +802,47 @@ function docAlert_(a, code, docName) {
     var vals = [new Date(), code, title, msg, 'yes', 'auto-docs', tr(title, 'ur'), tr(title, 'hi'), tr(title, 'gu'), tr(msg, 'ur'), tr(msg, 'hi'), tr(msg, 'gu')];
     if (row) a.getRange(row, 1, 1, vals.length).setValues([vals]); else a.appendRow(vals);
   } catch (x) {}
+}
+
+// Google Drive reads the text in a photo or scanned PDF: upload it as a temporary Google Doc (OCR), export the text, delete it.
+// Returns the text, or null if Google refused. Uses only the Drive permission the Sheet already has.
+function ocr_(bytes, mime) {
+  var id = '';
+  try {
+    var b = 'mzb' + Date.now(), tok = ScriptApp.getOAuthToken(), h = { Authorization: 'Bearer ' + tok };
+    var meta = JSON.stringify({ name: 'meezab-text-reading (temporary)', mimeType: 'application/vnd.google-apps.document' });
+    var payload = Utilities.newBlob('--' + b + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + meta + '\r\n--' + b + '\r\nContent-Type: ' + mime + '\r\n\r\n').getBytes()
+      .concat(bytes).concat(Utilities.newBlob('\r\n--' + b + '--').getBytes());
+    var r = UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&ocrLanguage=en&fields=id',
+      { method: 'post', contentType: 'multipart/related; boundary=' + b, payload: payload, headers: h, muteHttpExceptions: true });
+    if (r.getResponseCode() !== 200) throw new Error('upload ' + r.getResponseCode() + ' ' + r.getContentText().slice(0, 200));
+    id = JSON.parse(r.getContentText()).id;
+    var t = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + id + '/export?mimeType=text/plain', { headers: h, muteHttpExceptions: true });
+    if (t.getResponseCode() !== 200) throw new Error('export ' + t.getResponseCode());
+    return t.getContentText().slice(0, 20000);
+  } catch (x) {
+    PropertiesService.getScriptProperties().setProperty('ocr_last_error', new Date().toISOString() + ' ' + String(x && x.message || x).slice(0, 400));
+    return null;
+  } finally {
+    if (id) { try { DriveApp.getFileById(id).setTrashed(true); } catch (x) {} }
+  }
+}
+// Finds the active pilgrim whose name appears in the text (every main word of the name must be there). Returns a code or ''.
+function matchHaji_(p, text) {
+  var words = {}, up = String(text || '').toUpperCase();
+  var code = /MZB[\s-]*([A-Z0-9]{4})[\s-]*([A-Z0-9]{2})\b/.exec(up);
+  up.replace(/[^A-Z0-9]+/g, ' ').trim().split(' ').forEach(function (w) { if (w) words[w] = 1; });
+  var last = p.getLastRow(); if (last < 2) return '';
+  var rows = p.getRange(2, 1, last - 1, 3).getValues(), best = '', top = 0, tie = false;
+  if (code) { var c = 'MZB-' + code[1] + '-' + code[2]; if (rows.some(function (r) { return String(r[0]) === c; })) return c; }
+  rows.forEach(function (r) {
+    if (!r[0] || String(r[1]).toLowerCase() === 'no') return;
+    var all = String(r[2]).toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim().split(' ').filter(function (w) { return w.length >= 3; });
+    var nw = all.filter(function (w) { return !/^(HAJI|HAJJAN|MOHD|MD|SHAIKH|SHEIKH|BIN|BINTI|BEGUM|BIBI|KHATOON)$/.test(w); });
+    if (!nw.length) nw = all; if (!nw.length) return;
+    var hit = nw.filter(function (w) { return words[w]; }).length;
+    if (hit < Math.min(2, nw.length) || hit < nw.length) return;
+    var score = hit + 1; if (score > top) { top = score; best = String(r[0]); tie = false; } else if (score === top) tie = true;
+  });
+  return tie ? '' : best;
 }
