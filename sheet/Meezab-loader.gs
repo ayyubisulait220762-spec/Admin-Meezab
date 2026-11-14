@@ -203,8 +203,9 @@ function cacheGet_() {
 function clearCache_() { try { CacheService.getScriptCache().remove('core_n'); } catch (x) {} }
 
 // Never runs. It only tells Google which permissions the Meezab code needs (Sheet, email, internet, timers,
-// translation, and Google Drive for the planned document copies), so new versions never need a new "Allow".
+// translation, Google Drive for document copies, Google Calendar for task reminders).
 function permissions_() {
   SpreadsheetApp.getActive(); SpreadsheetApp.getUi(); MailApp.sendEmail('', '', ''); UrlFetchApp.fetch('');
   ScriptApp.newTrigger(''); LanguageApp.translate('', '', ''); DriveApp.getRootFolder(); DriveApp.createFolder('');
+  CalendarApp.getDefaultCalendar();   // added 15 Nov 2026: task reminders in Google Calendar
 }

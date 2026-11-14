@@ -1,6 +1,6 @@
 // MEEZAB CORE - the real code of the "Meezab leads" Sheet. Loaded automatically by the small loader in the Sheet
 // (Meezab-loader.gs). To update the Sheet, publish a new version of this file on GitHub and raise VERSION. Nothing to paste.
-var VERSION = '6.5';
+var VERSION = '6.6';
 // MEEZAB E RAHEMAT - leads, feedback, news, My Hajj and the Admin meezab app in one Google Sheet.   (version 6.2, 10 Nov 2026)
 // New in 6.2: runs through the self-updating loader (no more copy-paste in the Sheet).
 // New in 6.3: checklist 'Vaccination' renamed 'Vaccine & Medical card', new 'Nusuk card' (last column);
@@ -13,6 +13,8 @@ var VERSION = '6.5';
 //             Photos and scanned PDFs: Google Drive reads the text in them (OCR) to find the Haji's name automatically.
 // New in 6.5: TWO PHONES PER CODE – phone 1 (first to open) sees everything and can download documents; phone 2 can view
 //             but not download; a 3rd phone is refused ('Phone lock' column). Admin app: Swap / Remove phone 2 / Reset.
+// New in 6.6: TASKS (voice reminders from the admin app) in a "Tasks" tab; each task also becomes a Google Calendar event
+//             (notification 30 min before and at the time; Basil invited to his tasks). Needs the Calendar line in the loader.
 // Fix in 6.1: 'Add pilgrim' from the Admin meezab app now saves a NEW row (6.0 wrote over the Pilgrims header row).
 //             The Pilgrims tab repairs itself automatically (header put back on row 1, the pilgrim moves to row 2).
 // New in version 6 - MY HAJJ + ADMIN MEEZAB:
@@ -641,6 +643,34 @@ function admin_(d) {
       if (gk !== 'photo') docAlert_(sh.a, gcode, DOC_NAMES[gk] + (gslot !== gk ? ' (page 2)' : ''));
       return { ok: true, code: gcode, name: str_(gname), doc: DOC_NAMES[gk], list: gl2 };
     }
+    case 'tasks': {
+      var ts = tasksSheet_(ss), tl = ts.getLastRow(), out = [];
+      if (tl > 1) out = ts.getRange(2, 1, tl - 1, TASK_HEAD.length).getValues().filter(function (r) { return r[0]; }).map(taskObj_);
+      return { ok: true, list: out, cal: calOk_() };
+    }
+    case 'saveTask': {
+      var tsh = tasksSheet_(ss), text = clean_(data.text, 300), due = new Date(Number(data.due) || 0), who = TASK_FOR.indexOf(data.for) >= 0 ? data.for : user;
+      if (!text) return { ok: false, err: 'text' };
+      if (isNaN(due) || due.getTime() < 1e12) return { ok: false, err: 'due' };
+      var trow = data.id ? taskRow_(tsh, data.id) : 0, tv;
+      if (trow) { tv = tsh.getRange(trow, 1, 1, TASK_HEAD.length).getValues()[0]; tv[1] = text; tv[2] = due; tv[3] = who; }
+      else tv = ['T' + Utilities.getUuid().replace(/-/g, '').slice(0, 10), text, due, who, 'open', user, new Date(), '', '', ''];
+      var cal = calEvent_(tv);                                     // '' = no Calendar permission yet (task still saved)
+      tv[7] = cal.id || tv[7];
+      if (trow) tsh.getRange(trow, 1, 1, TASK_HEAD.length).setValues([tv]); else tsh.appendRow(tv);
+      log_(ss, user, trow ? 'edit task' : 'add task', text.slice(0, 80));
+      return { ok: true, task: taskObj_(tv), cal: cal.status };
+    }
+    case 'doneTask': case 'deleteTask': {
+      var tsd = tasksSheet_(ss), drow = taskRow_(tsd, data.id); if (!drow) return { ok: false, err: 'none' };
+      var dv = tsd.getRange(drow, 1, 1, TASK_HEAD.length).getValues()[0];
+      if (d.action === 'deleteTask') { calDelete_(dv[7]); tsd.deleteRow(drow); log_(ss, user, 'delete task', String(dv[1]).slice(0, 80)); return { ok: true }; }
+      var isDone = data.done !== false && data.done !== 'false';
+      dv[4] = isDone ? 'done' : 'open'; dv[8] = isDone ? user : ''; dv[9] = isDone ? new Date() : '';
+      tsd.getRange(drow, 1, 1, TASK_HEAD.length).setValues([dv]); calDone_(dv[7], dv[1], isDone);
+      log_(ss, user, isDone ? 'task done' : 'task reopened', String(dv[1]).slice(0, 80));
+      return { ok: true, task: taskObj_(dv) };
+    }
     case 'resetPhone': case 'phoneSwap': case 'phoneRemove2': {
       var rc = cleanCode_(data.code), rr = rc ? findRow_(sh.p, rc) : 0; if (!rr) return { ok: false, err: 'code' };
       var pcol = PIL_HEAD.indexOf('Phone lock') + 1, PL = lockRead_(sh.p.getRange(rr, pcol).getValue());
@@ -894,4 +924,45 @@ function phoneRole_(p, row, lockText, d) {
   if (mine(L.p2)) return 'view';
   if (!L.p2) { L.p2 = { ids: [dev], fp: fp, on: now, ua: ua }; save(); return 'view'; }
   return '';
+}
+
+
+// ======================= TASKS + GOOGLE CALENDAR (version 6.6) =======================
+var TASK_HEAD = ['ID', 'Task', 'Due', 'For (sulait/basil/both)', 'Status', 'Created by', 'Created on', 'Calendar event', 'Done by', 'Done on'];
+var TASK_FOR = ['sulait', 'basil', 'both'];
+// Basil's address is taken from NOTIFY_EMAILS (the one starting with 'basil'); tasks go to the Sheet owner's own calendar.
+function basilEmail_() { return String(NOTIFY_EMAILS || '').split(',').map(function (e) { return e.trim(); }).filter(function (e) { return /^basil/i.test(e); })[0] || ''; }
+function tasksSheet_(ss) { return sheet_(ss, 'Tasks', TASK_HEAD); }
+function taskRow_(t, id) {
+  id = String(id || ''); var last = t.getLastRow(); if (!id || last < 2) return 0;
+  var ids = t.getRange(2, 1, last - 1, 1).getValues();
+  for (var i = 0; i < ids.length; i++) if (String(ids[i][0]) === id) return i + 2;
+  return 0;
+}
+function taskObj_(r) {
+  var due = r[2] instanceof Date ? r[2] : new Date(r[2]);
+  return { id: String(r[0]), text: String(r[1]), due: isNaN(due) ? 0 : due.getTime(), for: String(r[3] || 'both'), status: String(r[4] || 'open'),
+           by: String(r[5]), cal: r[7] ? 1 : 0, doneBy: String(r[8] || ''), doneOn: str_(r[9]) };
+}
+// Is the Calendar permission there? (it comes from the one line in the loader + install + Allow)
+function calOk_() { try { CalendarApp.getDefaultCalendar().getId(); return true; } catch (x) { return false; } }
+function calEvent_(tv) {
+  try {
+    var calr = CalendarApp.getDefaultCalendar(), start = tv[2], end = new Date(start.getTime() + 30 * 60000);
+    var who = String(tv[3]), title = 'Meezab: ' + tv[1] + (who === 'basil' ? ' (Basil)' : who === 'both' ? ' (Sulait + Basil)' : '');
+    var guests = who === 'basil' || who === 'both' ? basilEmail_() : '';
+    var ev = null;
+    if (tv[7]) { try { ev = calr.getEventById(tv[7]); } catch (x) { ev = null; } }
+    if (ev) { ev.setTitle(title); ev.setTime(start, end); }
+    else ev = calr.createEvent(title, start, end, { description: 'Task from the Admin meezab app. Mark it done in the app (Tasks tab).', guests: guests, sendInvites: !!guests });
+    if (guests) { try { if (!ev.getGuestByEmail(guests)) ev.addGuest(guests); } catch (x) {} }
+    ev.removeAllReminders(); ev.addPopupReminder(30); ev.addPopupReminder(0);
+    return { id: ev.getId(), status: 'ok' };
+  } catch (x) { return { id: '', status: 'noperm' }; }
+}
+function calDelete_(id) { if (!id) return; try { var ev = CalendarApp.getDefaultCalendar().getEventById(id); if (ev) ev.deleteEvent(); } catch (x) {} }
+function calDone_(id, text, done) {
+  if (!id) return;
+  try { var ev = CalendarApp.getDefaultCalendar().getEventById(id); if (!ev) return;
+    var t = ev.getTitle().replace(/^✓ /, ''); ev.setTitle(done ? '✓ ' + t : t); ev.removeAllReminders(); if (!done) { ev.addPopupReminder(30); ev.addPopupReminder(0); } } catch (x) {}
 }

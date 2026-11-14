@@ -98,6 +98,19 @@ nav button.on{color:var(--g2)}
 .ith{width:74px;height:96px;flex:none;border-radius:10px;border:1px solid var(--line);background:#fff;overflow:hidden;padding:0;display:grid;place-items:center;color:#555;font-weight:700;font-size:12px}
 .ith img{width:100%;height:100%;object-fit:cover}
 optgroup{color:var(--mute)}
+.mic{min-height:64px;font-size:17px}
+.mic.on{animation:micp 1.2s ease-in-out infinite;background:linear-gradient(135deg,#FBEBB5,#E26B5B)}
+@keyframes micp{50%{box-shadow:0 0 0 12px rgba(217,180,74,.18)}}
+.mico{font-size:22px}
+.tk{display:flex;align-items:center;gap:12px;padding:12px}
+.tkc{width:30px;height:30px;flex:none;border-radius:50%;border:2px solid var(--g2);background:none;color:#1a1205;font-weight:800}
+.tk.dn .tkc{background:var(--ok);border-color:var(--ok)}
+.tk.dn .tkt{text-decoration:line-through;color:var(--mute)}
+.tkt{font-weight:600;word-wrap:break-word}
+.tkm{font-size:12px;color:var(--mute);margin-top:3px}
+.tpop{position:fixed;inset:0;z-index:20;background:#000b;display:grid;place-items:center;padding:20px}
+.tpbox{width:100%;max-width:420px;max-height:84vh;overflow:auto;background:var(--card);border:1px solid var(--g2);border-radius:20px;padding:20px;text-align:center}
+nav button{font-size:10.5px}
 .demo{background:#3a2b0b;color:var(--g1);font-size:12px;text-align:center;padding:4px}
 </style>
 </head>
@@ -124,6 +137,7 @@ optgroup{color:var(--mute)}
   <nav>
     <button data-t="pilgrims" class="on"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><circle cx="17" cy="9" r="2.6"/><path d="M16 14.6c2.8.1 4.8 1.8 5.4 4.9"/></svg>Pilgrims</button>
     <button data-t="records"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>Records</button>
+    <button data-t="tasks"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/></svg>Tasks</button>
     <button data-t="alerts"><svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>Alerts</button>
     <button data-t="leads"><svg viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a1.5 1.5 0 0 1-1.6 1.5C10.5 20 4 13.5 3.5 5.6A1.5 1.5 0 0 1 5 4z"/></svg>Leads</button>
     <button data-t="more"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.5 3.6-5.5 7-5.5s6.2 2 7 5.5"/></svg>Me</button>
@@ -195,6 +209,7 @@ function startApp() {
   $('#vLogin').classList.add('hide'); $('#app').classList.remove('hide');
   $('#who').textContent = NAMES[S.user] || S.user;
   go(S.tab);
+  setTimeout(tasksPopup, 1200);
 }
 document.querySelectorAll('nav button').forEach(function (b) { b.onclick = function () { go(b.dataset.t); }; });
 function setHead(t, back) {
@@ -206,7 +221,7 @@ function go(tab) {
   document.querySelectorAll('nav button').forEach(function (b) { b.classList.toggle('on', b.dataset.t === tab); });
   $('#fab').classList.toggle('hide', tab !== 'pilgrims');
   $('#fab').onclick = function () { editPilgrim(null); };
-  ({ pilgrims: pilgrimsView, records: recordsView, alerts: alertsView, leads: leadsView, more: moreView })[tab]();
+  ({ pilgrims: pilgrimsView, records: recordsView, tasks: tasksView, alerts: alertsView, leads: leadsView, more: moreView })[tab]();
 }
 function spin() { $('#main').innerHTML = '<div class="spin"></div>'; }
 function fail(e) { $('#main').innerHTML = '<div class="empty">Could not load.<br>' + esc(e.message || 'Check internet') + '<br><br><button class="btn sm sec" onclick="go(S.tab)">Try again</button></div>'; }
@@ -781,6 +796,146 @@ function giveOne(id, quiet) {
   }).catch(function (e) { if (gb) { gb.disabled = false; gb.textContent = 'Give to ' + p.Name; } toast(e && e.message === 'none' ? 'Already given' : 'Not given – check internet'); });
 }
 
+// ---------- TASKS: voice (phone speech, en-IN) + simple Hinglish rules -> task card -> Sheet + Google Calendar ----------
+var HNUM = { ek: 1, do: 2, teen: 3, tin: 3, char: 4, chaar: 4, paanch: 5, panch: 5, chhe: 6, chhah: 6, che: 6, saat: 7, sat: 7, aath: 8, aat: 8, nau: 9, no: 9, das: 10, dus: 10, gyarah: 11, gyara: 11, barah: 12, bara: 12,
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 };
+var WDAY = { 0: ['itwar', 'itvar', 'itwaar', 'ravivar', 'sunday'], 1: ['peer', 'pir', 'somvar', 'somwar', 'monday'], 2: ['mangal', 'mangalvar', 'mangalwar', 'tuesday'],
+  3: ['budh', 'budhvar', 'budhwar', 'wednesday'], 4: ['jumerat', 'jumeraat', 'jummerat', 'guruvar', 'thursday'], 5: ['juma', 'jumma', 'jumah', 'shukravar', 'friday'], 6: ['sanichar', 'shanivar', 'hafta', 'saturday'] };
+var MONS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+// Reads day, time and person from a Hinglish sentence. Returns { text, date (Date at 00:00 or null), h, m (or null), who, heard: {day, time} }
+function parseTask(raw, me) {
+  var t = ' ' + String(raw || '').toLowerCase().replace(/[,.!?]/g, ' ').replace(/\s+/g, ' ') + ' ', cut = [];
+  var num = function (w) { return /^\d+$/.test(w) ? +w : HNUM[w]; };
+  var NW = '(\\d{1,2}|' + Object.keys(HNUM).join('|') + ')';
+  var take = function (re) { var m = re.exec(t); if (m) { cut.push(m[0]); t = t.replace(m[0], ' '); } return m; };
+  var today = new Date(); today.setHours(0, 0, 0, 0); var date = null, m;
+  // ---- day ----
+  if ((m = take(/ (day after tomorrow|parso|parson|parsoon) /))) date = new Date(today.getTime() + 2 * 864e5);
+  else if ((m = take(new RegExp(' ' + NW + ' (din|days?) (baad|bad|ke baad|after|later) ')))) date = new Date(today.getTime() + num(m[1]) * 864e5);
+  else if ((m = take(/ (aaj|aj|today|abhi) /))) date = today;
+  else if ((m = take(/ (kal|kaal|tomorrow) /))) date = new Date(today.getTime() + 864e5);
+  if (!date) for (var wd in WDAY) { var re = new RegExp(' (agle |next |is |iss |this )?(' + WDAY[wd].join('|') + ')( ko| ke din| wale din)? ');
+    if ((m = take(re))) { var dd = (+wd - today.getDay() + 7) % 7; if (dd === 0 || /agle|next/.test(m[1] || '')) dd = dd || 7; date = new Date(today.getTime() + dd * 864e5); break; } }
+  if (!date && (m = take(new RegExp(' (\\d{1,2})(st|nd|rd|th)? (' + MONS.join('|') + ')[a-z]* ')))) { date = new Date(today.getFullYear(), MONS.indexOf(m[3]), +m[1]); if (date < today) date.setFullYear(date.getFullYear() + 1); }
+  if (!date && (m = take(/ (\d{1,2}) (tarikh|tareekh|tarik|date) (ko )?/))) { date = new Date(today.getFullYear(), today.getMonth(), +m[1]); if (date < today) date.setMonth(date.getMonth() + 1); }
+  // ---- time ----
+  var h = null, mi = 0, part = '';
+  if ((m = take(/ (subah|subha|savere|sawere|morning|fajr ke baad) /))) part = 'am';
+  else if ((m = take(/ (dopahar|dopehar|dupahar|afternoon|zohar ke baad|zuhr ke baad) /))) part = 'noon';
+  else if ((m = take(/ (shaam|sham|evening|asr ke baad|maghrib ke baad) /))) part = 'pm';
+  else if ((m = take(/ (raat|rat|night|isha ke baad) /))) part = 'night';
+  if ((m = take(/ (\d{1,2})[:.](\d{2}) ?(am|pm|a m|p m)?( baje| bje)? /))) { h = +m[1]; mi = +m[2]; if (m[3]) part = m[3].charAt(0) === 'p' ? 'pm' : 'am'; }
+  else if ((m = take(new RegExp(' (saade|sade|saadhe|sadhe) ' + NW + '( baje| bje)? ')))) { h = num(m[2]); mi = 30; }
+  else if ((m = take(new RegExp(' (sawa|savva|sava) ' + NW + '( baje| bje)? ')))) { h = num(m[2]); mi = 15; }
+  else if ((m = take(new RegExp(' (paune|pone|pauney) ' + NW + '( baje| bje)? ')))) { h = num(m[2]) - 1; mi = 45; if (h === 0) h = 12; }
+  else if ((m = take(/ (dedh|derh)( baje| bje)? /))) { h = 1; mi = 30; }
+  else if ((m = take(/ (dhai|dhaai|adhai|dhaee)( baje| bje)? /))) { h = 2; mi = 30; }
+  else if ((m = take(new RegExp(' ' + NW + ' ?(am|pm|a m|p m) ')))) { h = num(m[1]); part = m[2].charAt(0) === 'p' ? 'pm' : 'am'; }
+  else if ((m = take(new RegExp(' ' + NW + ' (baje|bje|bajay|o clock|oclock) ')))) h = num(m[1]);
+  if (h !== null) {
+    if (part === 'pm' || part === 'noon') { if (h < 12) h += 12; }
+    else if (part === 'night') { if (h >= 6 && h < 12) h += 12; }
+    else if (part === 'am') { if (h === 12) h = 0; }
+    else if (h >= 1 && h <= 6) h += 12;                       // "4 baje" usually means 4 pm
+  } else if (part) h = { am: 9, noon: 13, pm: 17, night: 21 }[part];
+  // ---- person ----
+  var who = me;
+  if ((m = take(/ (hum dono|dono|both|sulait (aur|and) basil|basil (aur|and) sulait)( ko| ke liye)? /))) who = 'both';
+  else if ((m = take(/ (basil|basel|bassil)( bhai)?( ko| ke liye)? (?!se |say |sey )/))) who = 'basil';
+  else if ((m = take(/ (mujhe|mujhko|mere liye|apne liye|sulait( bhai)?( ko| ke liye)?) /))) who = 'sulait';
+  // ---- tidy the task text ----
+  var text = t.replace(/ (yaad dilana|yaad dila dena|yaad dilao|remind (me|karna|kar dena)?|reminder( lagao| set karo)?|note karo|likh lo) /g, ' ')
+    .replace(/ (ko|ke|ki|ka|hai|he|ko ki) (?=\s*$)/g, ' ').replace(/^\s*(ko|ke|ki|ka|aur|and)\s+/, '').replace(/\s+/g, ' ').trim();
+  text = text.charAt(0).toUpperCase() + text.slice(1);
+  if (h === null) { h = 9; mi = 0; }
+  if (!date) { date = new Date(today); var nowM = new Date().getHours() * 60 + new Date().getMinutes(); if (h * 60 + mi <= nowM) date = new Date(today.getTime() + 864e5); }
+  return { text: text || String(raw || '').trim(), date: date, h: h, m: mi, who: who, heard: { day: /kal|kaal|tomorrow|aaj|aj|today|parso|din|tarikh|tareekh|date|[a-z]+day|itwar|peer|somvar|mangal|budh|jumerat|juma|jumma|sanichar|hafta|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec/.test(cut.join(' ')), time: cut.some(function (c) { return /baje|bje|\d[:.]\d|am|pm|saade|sade|sawa|paune|dedh|dhai|subah|shaam|sham|dopahar|raat|morning|evening|night/.test(c); }) } };
+}
+var WHO = { sulait: 'Sulait', basil: 'Basil', both: 'Sulait + Basil' };
+function pad2(n) { return ('0' + n).slice(-2); }
+function ymd(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+function fmtDue(ms) { var d = new Date(ms), t = new Date(); t.setHours(0, 0, 0, 0); var dd = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - t) / 864e5);
+  return (dd === 0 ? 'Today' : dd === 1 ? 'Tomorrow' : dd === -1 ? 'Yesterday' : d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })) + ', ' + d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }); }
+function tasksView() {
+  setHead('TASKS'); spin();
+  api('tasks').then(function (j) { if (!j.ok) throw new Error(j.err); S.tasks = j.list; S.calOk = j.cal; renderTasks(); }).catch(fail);
+}
+function renderTasks() {
+  var L = S.tasks || [], now = Date.now(), t0 = new Date(); t0.setHours(0, 0, 0, 0); var t1 = t0.getTime() + 864e5;
+  var open = L.filter(function (x) { return x.status !== 'done'; }).sort(function (a, b) { return a.due - b.due; });
+  var over = open.filter(function (x) { return x.due < now; }),
+      today = open.filter(function (x) { return x.due >= now && x.due < t1; }), later = open.filter(function (x) { return x.due >= t1; }),
+      done = L.filter(function (x) { return x.status === 'done'; }).sort(function (a, b) { return b.due - a.due; }).slice(0, 15);
+  var row = function (x) { var late = x.status !== 'done' && x.due < now;
+    return '<div class="card tk' + (x.status === 'done' ? ' dn' : '') + '" data-tid="' + esc(x.id) + '"><button class="tkc" data-tdone="' + esc(x.id) + '" aria-label="Done">' + (x.status === 'done' ? '✓' : '') + '</button>' +
+      '<div style="flex:1;min-width:0"><div class="tkt">' + esc(x.text) + '</div><div class="tkm"' + (late ? ' style="color:var(--bad)"' : '') + '>' + (late ? '⏰ ' : '') + esc(fmtDue(x.due)) + ' · ' + esc(WHO[x.for] || x.for) + (x.cal ? ' · 📅' : '') +
+      (x.status === 'done' ? ' · done by ' + esc(NAMES[x.doneBy] || x.doneBy) : '') + '</div></div><button class="btn sm sec" data-tedit="' + esc(x.id) + '" aria-label="Edit">✎</button></div>'; };
+  var sec = function (title, arr, empty) { return '<h2>' + title + ' (' + arr.length + ')</h2>' + (arr.length ? arr.map(row).join('') : '<div class="empty" style="padding:14px">' + empty + '</div>'); };
+  $('#main').innerHTML = (S.calOk === false ? '<div class="card" style="border-color:var(--warn);color:var(--warn);font-size:13px">📅 Google Calendar is not connected yet, so tasks are saved here but phone notifications will not come. Do the 2-minute Calendar setup once.</div>' : '') +
+    '<button class="btn mic" id="micb"><span class="mico">🎤</span> Speak a task</button><button class="btn sec" id="typb" style="margin-top:8px">⌨ Type a task</button>' +
+    '<div style="color:var(--mute);font-size:12px;margin:8px 2px 0">Example: "Kal subah saade 9 baje Mina bus ke liye sab hajiyon ko call karna, Basil ko"</div>' +
+    (over.length ? sec('<span style="color:var(--bad)">Overdue</span>', over, '') : '') + sec('Today', today, 'Nothing left for today ✓') + sec('Upcoming', later, 'No upcoming tasks') + (done.length ? sec('Done', done, '') : '');
+  $('#micb').onclick = startVoice; $('#typb').onclick = function () { taskCard(null, ''); };
+  document.querySelectorAll('[data-tdone]').forEach(function (b) { b.onclick = function () { var x = S.tasks.filter(function (k) { return k.id === b.dataset.tdone; })[0]; if (!x) return; b.disabled = true;
+    api('doneTask', { data: { id: x.id, done: x.status !== 'done' } }).then(function (j) { if (!j.ok) throw new Error(); Object.assign(x, j.task); toast(x.status === 'done' ? 'Done ✓' : 'Opened again'); renderTasks(); })
+      .catch(function () { b.disabled = false; toast('Not saved – check internet'); }); }; });
+  document.querySelectorAll('[data-tedit]').forEach(function (b) { b.onclick = function () { taskCard(S.tasks.filter(function (k) { return k.id === b.dataset.tedit; })[0], ''); }; });
+}
+function startVoice() {
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition, b = $('#micb');
+  if (!SR) { toast('Voice is not available in this browser – tap the 🎤 on your keyboard instead'); taskCard(null, ''); return; }
+  var r = new SR(), said = ''; r.lang = 'en-IN'; r.interimResults = true; r.continuous = false; r.maxAlternatives = 1;
+  b.classList.add('on'); b.innerHTML = '<span class="mico">🎙</span> Listening… speak now';
+  r.onresult = function (e) { said = Array.prototype.map.call(e.results, function (x) { return x[0].transcript; }).join(' '); b.innerHTML = '<span class="mico">🎙</span> ' + esc(said); };
+  r.onerror = function (e) { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') toast('Allow the microphone for this site, then try again'); else if (e.error === 'no-speech') toast('Did not hear anything – try again'); };
+  r.onend = function () { b.classList.remove('on'); b.innerHTML = '<span class="mico">🎤</span> Speak a task'; if (said.trim()) taskCard(null, said.trim()); };
+  try { r.start(); } catch (x) { b.classList.remove('on'); toast('Could not start the microphone'); }
+}
+function taskCard(x, spoken) {
+  var P = x ? { text: x.text, date: new Date(x.due), h: new Date(x.due).getHours(), m: new Date(x.due).getMinutes(), who: x.for, heard: { day: 1, time: 1 } } : parseTask(spoken, S.user);
+  var d = P.date || new Date();
+  setHead(x ? 'EDIT TASK' : 'NEW TASK', function () { go('tasks'); });
+  $('#main').innerHTML = (spoken ? '<div class="card" style="font-size:13px;color:var(--mute)">You said: <i>"' + esc(spoken) + '"</i></div>' : '') +
+    '<div class="card"><label class="lbl" for="tkx">Task</label><textarea id="tkx" maxlength="300" placeholder="What has to be done?">' + esc(P.text || '') + '</textarea>' +
+    '<div class="row"><div><label class="lbl" for="tkd">Day</label><input id="tkd" type="date" value="' + ymd(d) + '"></div><div><label class="lbl" for="tkh">Time</label><input id="tkh" type="time" value="' + pad2(P.h) + ':' + pad2(P.m) + '"></div></div>' +
+    (spoken && (!P.heard.day || !P.heard.time) ? '<div style="color:var(--warn);font-size:12px;margin-top:6px">' + (!P.heard.day && !P.heard.time ? 'Day and time not heard' : !P.heard.day ? 'Day not heard' : 'Time not heard') + ' – please check.</div>' : '') +
+    '<label class="lbl">For</label><div class="who2" style="margin:0;grid-template-columns:1fr 1fr 1fr">' + ['sulait', 'basil', 'both'].map(function (w) { return '<button data-tw="' + w + '" class="' + (P.who === w ? 'on' : '') + '">' + WHO[w] + '</button>'; }).join('') + '</div></div>' +
+    '<div class="err" id="tkerr"></div><button class="btn" id="tks">' + (x ? 'Save changes' : 'Save task & set reminder') + '</button>' +
+    (x ? '<button class="btn sec" id="tkdel" style="margin-top:10px">Delete task</button>' : '<button class="btn sec" id="tkagain" style="margin-top:10px">🎤 Speak again</button>') +
+    '<div style="color:var(--mute);font-size:12px;text-align:center;margin-top:10px">Goes into Google Calendar: notification 30 minutes before and at the time. Basil\'s tasks are sent to him as a Calendar invite.</div>';
+  var who = P.who;
+  document.querySelectorAll('[data-tw]').forEach(function (b) { b.onclick = function () { who = b.dataset.tw; document.querySelectorAll('[data-tw]').forEach(function (c) { c.classList.toggle('on', c === b); }); }; });
+  if ($('#tkagain')) $('#tkagain').onclick = function () { go('tasks'); setTimeout(startVoice, 300); };
+  if ($('#tkdel')) $('#tkdel').onclick = function () { if (!confirm('Delete this task? It is also removed from Google Calendar.')) return;
+    api('deleteTask', { data: { id: x.id } }).then(function () { S.tasks = S.tasks.filter(function (k) { return k.id !== x.id; }); toast('Deleted'); go('tasks'); }).catch(function () { toast('Not deleted'); }); };
+  $('#tks').onclick = function () {
+    var text = $('#tkx').value.trim(), dv = $('#tkd').value, tv = $('#tkh').value, e = $('#tkerr'), btn = this;
+    if (!text) { e.textContent = 'Write what has to be done.'; return; }
+    if (!dv || !tv) { e.textContent = 'Choose the day and time.'; return; }
+    var due = new Date(dv + 'T' + tv).getTime();
+    btn.disabled = true; btn.textContent = 'Saving…';
+    api('saveTask', { data: { id: x ? x.id : '', text: text, due: due, for: who } }).then(function (j) {
+      if (!j.ok) throw new Error(); S.tasks = (S.tasks || []).filter(function (k) { return k.id !== j.task.id; }).concat([j.task]); S.calOk = j.cal === 'ok' ? true : j.cal === 'noperm' ? false : S.calOk;
+      toast(j.cal === 'ok' ? 'Saved · reminder set in Google Calendar 📅' : 'Saved · Calendar not connected yet'); go('tasks');
+    }).catch(function () { btn.disabled = false; btn.textContent = 'Save task & set reminder'; e.textContent = 'Not saved – check internet.'; });
+  };
+}
+// Once a day, when the app opens: pop-up of today's and overdue tasks for this person.
+function tasksPopup() {
+  var key = 'mz_tp_' + S.user + '_' + ymd(new Date()); try { if (localStorage.getItem(key)) return; } catch (e) {}
+  api('tasks').then(function (j) { if (!j.ok) return; S.tasks = j.list; S.calOk = j.cal;
+    var end = new Date(); end.setHours(23, 59, 59, 999);
+    var mine = j.list.filter(function (x) { return x.status !== 'done' && x.due <= end.getTime() && (x.for === S.user || x.for === 'both'); }).sort(function (a, b) { return a.due - b.due; });
+    if (!mine.length) return; try { localStorage.setItem(key, '1'); } catch (e) {}
+    var o = document.createElement('div'); o.className = 'tpop';
+    o.innerHTML = '<div class="tpbox"><div style="font-size:30px">📋</div><b style="font-size:18px;color:var(--g1)">Today\'s tasks (' + mine.length + ')</b>' +
+      mine.slice(0, 8).map(function (x) { var late = x.due < Date.now(); return '<div style="text-align:start;padding:8px 0;border-bottom:1px solid var(--line)"><div>' + esc(x.text) + '</div><small style="color:' + (late ? 'var(--bad)' : 'var(--mute)') + '">' + (late ? '⏰ ' : '') + esc(fmtDue(x.due)) + '</small></div>'; }).join('') +
+      '<div class="row" style="margin-top:12px"><button class="btn sec" data-tpx>Close</button><button class="btn" data-tpgo>Open Tasks</button></div></div>';
+    document.body.appendChild(o);
+    o.querySelector('[data-tpx]').onclick = function () { o.remove(); }; o.querySelector('[data-tpgo]').onclick = function () { o.remove(); go('tasks'); };
+  }).catch(function () {});
+}
+
 // ---------- alerts ----------
 function alertsView() {
   setHead('ALERTS'); spin();
@@ -918,6 +1073,15 @@ function demoApi(b) {
       var r2 = demoApi({ action: 'uploadDoc', user: b.user, data: { code: b.data.code, key: it.key, page: b.data.page, thumb: it.th, mime: it.mime, data: '' } });
       var P2 = D.list.filter(function (x) { return x.Code === b.data.code; })[0];
       return { ok: true, code: b.data.code, name: P2.Name, doc: DOCS.filter(function (d) { return d[0] === it.key; })[0][1], list: r2.list }; }
+    case 'tasks': return { ok: true, cal: D.calOk !== false, list: (D.tasks = D.tasks || [
+      { id: 'T1', text: 'Collect remaining passports from Malegaon office', due: Date.now() - 2 * 36e5, for: 'sulait', status: 'open', cal: 1 },
+      { id: 'T2', text: 'Confirm Mina tents with Maktab 92', due: Date.now() + 3 * 36e5, for: 'basil', status: 'open', cal: 1 },
+      { id: 'T3', text: 'Zamzam bottles for all Hajis', due: Date.now() + 30 * 36e5, for: 'both', status: 'open', cal: 1 },
+      { id: 'T4', text: 'Send hotel rooming list to Basil', due: Date.now() - 26 * 36e5, for: 'sulait', status: 'done', cal: 1, doneBy: 'sulait' }]) };
+    case 'saveTask': { D.tasks = D.tasks || []; var tk = { id: b.data.id || 'T' + Date.now(), text: b.data.text, due: b.data.due, for: b.data.for, status: 'open', cal: 1 };
+      D.tasks = D.tasks.filter(function (x) { return x.id !== tk.id; }).concat([tk]); return { ok: true, task: tk, cal: 'ok' }; }
+    case 'doneTask': { var dt = D.tasks.filter(function (x) { return x.id === b.data.id; })[0]; dt.status = b.data.done ? 'done' : 'open'; dt.doneBy = b.user; return { ok: true, task: dt }; }
+    case 'deleteTask': D.tasks = D.tasks.filter(function (x) { return x.id !== b.data.id; }); return { ok: true };
     default: return { ok: true };
   }
 }

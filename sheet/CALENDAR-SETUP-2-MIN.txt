@@ -1,0 +1,26 @@
+MEEZAB – TASK REMINDERS IN GOOGLE CALENDAR: ONE-TIME SETUP (about 2 minutes, on a computer)     15 Nov 2026
+Who: Sulait (the Sheet is in Sulait's Gmail; tasks go into Sulait's Google Calendar).
+Nothing else in the Sheet changes. Do this only once.
+
+1. Open the "Meezab leads" Google Sheet  >  Extensions  >  Apps Script.
+2. In Code.gs, scroll to the very bottom. You will see a part that starts with:
+       function permissions_() {
+   Just before its last line  }  add this ONE new line:
+       CalendarApp.getDefaultCalendar();
+   It should end like this:
+       ScriptApp.newTrigger(''); LanguageApp.translate('', '', ''); DriveApp.getRootFolder(); DriveApp.createFolder('');
+       CalendarApp.getDefaultCalendar();
+     }
+   Press Save.
+3. At the top choose the function  install  and press  Run.
+   Google asks for permission – press Allow (if it says "not verified": Advanced > Go to ... > Allow).
+   It now also asks to "see, edit, share and delete your calendars" – that is for the task reminders.
+   The log must end with:  ALL DONE.
+4. Deploy  >  Manage deployments  >  pencil (Edit)  >  Version: "New version"  >  Deploy.
+   (NEVER "New deployment".)
+Done. In the admin app, the yellow "Calendar is not connected yet" note disappears.
+
+BASIL (once, on his phone, 1 minute)
+- Basil's tasks arrive as Google Calendar invites in his Gmail calendar.
+- To get the same alerts: Google Calendar app > Settings > basilayyubi09 calendar > Default notifications for events > 30 minutes.
+  (Google uses each person's own alert setting for invites.)
