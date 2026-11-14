@@ -11,8 +11,8 @@ var VERSION = '6.5';
 // New in 6.4: INBOX for bulk upload – many files go into Drive > Meezab pilgrim documents > Inbox, then 'Give to Haji'
 //             moves each one into the pilgrim's folder. The pilgrim gets one automatic alert per day listing new documents.
 //             Photos and scanned PDFs: Google Drive reads the text in them (OCR) to find the Haji's name automatically.
-// New in 6.5: ONE PHONE PER CODE – the first phone that opens My Hajj is remembered ('Phone lock' column); a forwarded
-//             link on another phone is refused. Admin app: 'Reset phone'. New code also resets it.
+// New in 6.5: TWO PHONES PER CODE – phone 1 (first to open) sees everything and can download documents; phone 2 can view
+//             but not download; a 3rd phone is refused ('Phone lock' column). Admin app: Swap / Remove phone 2 / Reset.
 // Fix in 6.1: 'Add pilgrim' from the Admin meezab app now saves a NEW row (6.0 wrote over the Pilgrims header row).
 //             The Pilgrims tab repairs itself automatically (header put back on row 1, the pilgrim moves to row 2).
 // New in version 6 - MY HAJJ + ADMIN MEEZAB:
@@ -456,7 +456,8 @@ function myHajj_(d) {
   var ss = SpreadsheetApp.getActive(), sh = myHajjSheets_(ss), row = code ? findRow_(sh.p, code) : 0;
   var r = row ? sh.p.getRange(row, 1, 1, PIL_HEAD.length).getValues()[0] : null;
   if (!r || !yes_(r[1] || 'yes')) { c.put(k, String((parseInt(c.get(k), 10) || 0) + 1), 3700); return { ok: false, err: 'code' }; }
-  if (!phoneOk_(sh.p, row, r[PIL_HEAD.indexOf('Phone lock')], d)) return { ok: false, err: 'device', office: OFFICE_PHONE };
+  var role = phoneRole_(sh.p, row, r[PIL_HEAD.indexOf('Phone lock')], d);
+  if (!role) return { ok: false, err: 'device', office: OFFICE_PHONE };
   var g = function (h) { return str_(r[PIL_HEAD.indexOf(h)]); };
   var checks = {}; CHECKS.forEach(function (h) { checks[h] = yes_(r[PIL_HEAD.indexOf(h)]); });
   var dep = r[PIL_HEAD.indexOf('Going date & time')];
@@ -467,7 +468,7 @@ function myHajj_(d) {
               roomMakkah: g('Room Makkah'), roomMadinah: g('Room Madinah'), roomShifting: g('Room shifting') },
     checks: checks, note: g('Note for pilgrim'),
     leader: { name: LEADER_NAME, phone: LEADER_PHONE || OFFICE_PHONE }, office: OFFICE_PHONE,
-    alerts: alertsFor_(sh.a, code), photo: thumbOf_(sh.ph, code),
+    alerts: alertsFor_(sh.a, code), photo: thumbOf_(sh.ph, code), role: role,
     docs: docList_(code, false).filter(function (x) { return x.key !== 'photo'; }) };
 }
 
@@ -640,10 +641,15 @@ function admin_(d) {
       if (gk !== 'photo') docAlert_(sh.a, gcode, DOC_NAMES[gk] + (gslot !== gk ? ' (page 2)' : ''));
       return { ok: true, code: gcode, name: str_(gname), doc: DOC_NAMES[gk], list: gl2 };
     }
-    case 'resetPhone': {
+    case 'resetPhone': case 'phoneSwap': case 'phoneRemove2': {
       var rc = cleanCode_(data.code), rr = rc ? findRow_(sh.p, rc) : 0; if (!rr) return { ok: false, err: 'code' };
-      sh.p.getRange(rr, PIL_HEAD.indexOf('Phone lock') + 1).setValue('');
-      log_(ss, user, 'reset phone', rc); return { ok: true };
+      var pcol = PIL_HEAD.indexOf('Phone lock') + 1, PL = lockRead_(sh.p.getRange(rr, pcol).getValue());
+      if (d.action === 'resetPhone' || !PL) PL = null;
+      else if (d.action === 'phoneSwap') { if (PL.p2) { var tmp = PL.p1; PL.p1 = PL.p2; PL.p2 = tmp; } }
+      else PL.p2 = null;
+      sh.p.getRange(rr, pcol).setValue(PL ? JSON.stringify(PL) : '');
+      log_(ss, user, d.action === 'resetPhone' ? 'reset phones' : d.action === 'phoneSwap' ? 'swap phones' : 'remove phone 2', rc);
+      return { ok: true, lock: PL ? JSON.stringify(PL) : '' };
     }
     case 'newCode': {                                            // replaces a leaked code; the old one stops working
       var oc = cleanCode_(data.code), orow = oc ? findRow_(sh.p, oc) : 0;
@@ -765,8 +771,11 @@ function myHajjDoc_(d) {
   var act = row ? sh.p.getRange(row, 2).getValue() : '';
   if (!row || !yes_(act || 'yes')) { c.put(k, String((parseInt(c.get(k), 10) || 0) + 1), 3700); return { ok: false, err: 'code' }; }
   var lk2 = LockService.getScriptLock(); try { lk2.waitLock(15000); } catch (x) { return { ok: false, err: 'busy' }; }
-  try { if (!phoneOk_(sh.p, row, sh.p.getRange(row, PIL_HEAD.indexOf('Phone lock') + 1).getValue(), d)) return { ok: false, err: 'device', office: OFFICE_PHONE }; }
-  finally { lk2.releaseLock(); }
+  try {
+    var rl = phoneRole_(sh.p, row, sh.p.getRange(row, PIL_HEAD.indexOf('Phone lock') + 1).getValue(), d);
+    if (!rl) return { ok: false, err: 'device', office: OFFICE_PHONE };
+    if (rl !== 'main') return { ok: false, err: 'mainonly' };                 // phone 2 may view, not download
+  } finally { lk2.releaseLock(); }
   var fl = docFiles_(docFolder_(code, false), slot_(d.key, d.page));
   if (!fl.length) return { ok: false, err: 'none' };
   return { ok: true, key: d.key, page: parseInt(d.page, 10) || 1, mime: fl[0].getMimeType(), name: fl[0].getName(), data: Utilities.base64Encode(fl[0].getBlob().getBytes()) };
@@ -859,18 +868,30 @@ function matchHaji_(p, text) {
 }
 
 
-// ======================= ONE PHONE PER CODE (version 6.5) =======================
-// The pilgrim app sends dev (a random id kept on the phone) and fp (a short summary of the phone: model, screen, settings).
-// First phone to open My Hajj is remembered. Same phone again (same id, or same summary = e.g. Safari and the home-screen
-// icon of the same iPhone) is fine. Any other phone gets err 'device'. Old app versions (no dev) work only while nothing is locked.
-function phoneOk_(p, row, lockText, d) {
+// ======================= TWO PHONES PER CODE (version 6.5) =======================
+// The pilgrim app sends dev (a random id kept on the phone), fp (a short summary of the phone: model, screen, settings)
+// and ua (e.g. "Android · SM-A546E"). Phone 1 = first to open: everything + downloads. Phone 2 = view only. Others: refused.
+// Same phone again (same id, or same summary – e.g. Safari and the home-screen icon of one iPhone) keeps its place.
+// Old app versions (no dev) work only while no phone is registered.
+function lockRead_(t) {
+  var L = null; try { L = t ? JSON.parse(t) : null; } catch (x) { L = null; }
+  if (L && L.ids && !L.p1) L = { p1: { ids: L.ids, fp: L.fp || '', on: L.on || '', ua: L.ua || '' }, p2: null };   // 6.5 test format
+  return L;
+}
+function phoneRole_(p, row, lockText, d) {
   var dev = String(d.dev || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 40), fp = String(d.fp || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 40);
-  var L = null; try { L = lockText ? JSON.parse(lockText) : null; } catch (x) { L = null; }
-  if (!dev) return !L;
-  var col = PIL_HEAD.indexOf('Phone lock') + 1;
-  if (!L) { p.getRange(row, col).setValue(JSON.stringify({ ids: [dev], fp: fp, on: Utilities.formatDate(new Date(), 'Asia/Kolkata', 'd MMM yyyy, h:mm a') })); return true; }
-  L.ids = L.ids || [];
-  if (L.ids.indexOf(dev) >= 0) return true;
-  if (fp && L.fp && fp === L.fp) { L.ids.push(dev); L.ids = L.ids.slice(-6); p.getRange(row, col).setValue(JSON.stringify(L)); return true; }
-  return false;
+  var ua = clean_(d.ua, 40), L = lockRead_(lockText), col = PIL_HEAD.indexOf('Phone lock') + 1;
+  if (!dev) return L ? '' : 'main';
+  var now = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'd MMM yyyy, h:mm a'), save = function () { p.getRange(row, col).setValue(JSON.stringify(L)); };
+  var mine = function (ph) {
+    if (!ph) return false;
+    if ((ph.ids || []).indexOf(dev) >= 0) return true;
+    if (fp && ph.fp && fp === ph.fp) { ph.ids = (ph.ids || []).concat([dev]).slice(-6); save(); return true; }
+    return false;
+  };
+  if (!L) { L = { p1: { ids: [dev], fp: fp, on: now, ua: ua }, p2: null }; save(); return 'main'; }
+  if (mine(L.p1)) return 'main';
+  if (mine(L.p2)) return 'view';
+  if (!L.p2) { L.p2 = { ids: [dev], fp: fp, on: now, ua: ua }; save(); return 'view'; }
+  return '';
 }
