@@ -258,10 +258,21 @@ function showPilgrim(code) {
     '<h2>Flights</h2><div class="card">' + (row('Going flight', p['Going flight']) + row('Going', p['Going date & time']) + row('Airport reporting', p['Airport reporting']) + row('Return flight', p['Return flight']) + row('Return', p['Return date & time']) || '<span style="color:var(--mute)">Not added yet</span>') + '</div>' +
     '<h2>Hotels & rooms</h2><div class="card">' + (row('Makkah', p['Makkah hotel']) + row('Room Makkah', p['Room Makkah']) + row('Madinah', p['Madinah hotel']) + row('Room Madinah', p['Room Madinah']) + row('Shifting', p['Shifting hotel']) + row('Room shifting', p['Room shifting']) || '<span style="color:var(--mute)">Not added yet</span>') + '</div>' +
     (p['Note for pilgrim'] ? '<h2>Note for pilgrim</h2><div class="card" style="white-space:pre-wrap">' + esc(p['Note for pilgrim']) + '</div>' : '') +
+    '<h2>Documents</h2><div class="card" id="docs"><div class="spin" style="margin:10px auto"></div></div>' +
     '<button class="btn sec" id="msgBtn" style="margin-top:6px">Send alert to this pilgrim</button>' +
+    '<button class="btn sec" id="ncBtn" style="margin-top:10px">New code (if the code was shared by mistake)</button>' +
     '<div style="font-size:12px;color:var(--mute);text-align:center;margin:14px 0">Added by ' + esc(NAMES[p['Added by']] || p['Added by']) + ' · ' + esc(p['Added on']) + (p['Updated on'] ? '<br>Updated by ' + esc(NAMES[p['Updated by']] || p['Updated by']) + ' · ' + esc(p['Updated on']) : '') + '</div>';
   $('#eBtn').onclick = function () { editPilgrim(p); };
   $('#msgBtn').onclick = function () { composeAlert(p.Code); };
+  $('#ncBtn').onclick = function () {
+    if (!confirm('Make a NEW code for ' + p.Name + '?\n\nThe old code ' + p.Code + ' will stop working. Send him the new code on WhatsApp after this.')) return;
+    var b = this; b.disabled = true; b.textContent = 'Making new code…';
+    api('newCode', { data: { code: p.Code } }).then(function (j) {
+      if (!j.ok) throw new Error(); toast('New code: ' + j.code);
+      return getPilgrims(true).then(function () { showPilgrim(j.code); });
+    }).catch(function () { b.disabled = false; b.textContent = 'New code (if the code was shared by mistake)'; toast('Not done – check internet'); });
+  };
+  loadDocs(p);
   document.querySelectorAll('#cl .tog').forEach(function (t) {
     t.onclick = function () {
       var k = t.dataset.k, sw = $('.sw', t), nv = !sw.classList.contains('on');
@@ -271,6 +282,70 @@ function showPilgrim(code) {
         if (!j.ok) throw new Error(); p[k] = nv ? 'yes' : ''; toast(k + (nv ? ' ✓ done' : ' – pending'));
       }).catch(function () { sw.classList.toggle('on', !nv); toast('Not saved – check internet'); });
     };
+  });
+}
+
+// ---------- documents (passport, visa, tickets, Nusuk card, medical card) ----------
+var DOCS = [['passport', 'Passport'], ['visa', 'Visa'], ['tkt_go', 'Departure ticket'], ['tkt_back', 'Return ticket'], ['nusuk', 'Nusuk card'], ['medical', 'Medical card']];
+function kb(n) { return n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+function loadDocs(p) {
+  api('docs', { data: { code: p.Code } }).then(function (j) { if (!j.ok) throw new Error(); renderDocs(p, j.list); })
+    .catch(function () { var b = $('#docs'); if (b) b.innerHTML = '<span style="color:var(--mute)">Could not load documents. <button class="btn sm sec" id="drt">Try again</button></span>'; var r = $('#drt'); if (r) r.onclick = function () { loadDocs(p); }; });
+}
+function renderDocs(p, list) {
+  var b = $('#docs'); if (!b) return; var have = {}; (list || []).forEach(function (d) { have[d.key] = d; });
+  b.innerHTML = DOCS.map(function (d) {
+    var h = have[d[0]];
+    return '<div class="tog" style="gap:8px"><span style="flex:1"><b style="font-weight:600">' + d[1] + '</b><br><small style="color:' + (h ? 'var(--ok)' : 'var(--mute)') + '">' +
+      (h ? '✓ ' + (h.mime === 'application/pdf' ? 'PDF' : 'Photo') + ' · ' + kb(h.size) + (h.on ? ' · ' + esc(h.on) : '') : 'Not uploaded') + '</small></span>' +
+      (h ? '<button class="btn sm sec" data-dv="' + d[0] + '">View</button><button class="btn sm sec" data-dx="' + d[0] + '" aria-label="Delete">✕</button>' : '') +
+      '<button class="btn sm' + (h ? ' sec' : '') + '" data-du="' + d[0] + '">' + (h ? 'Replace' : 'Upload') + '</button></div>';
+  }).join('') + '<p style="color:var(--mute);font-size:12px;margin:10px 0 0">Photo or PDF, up to 8 MB. Photos are made smaller automatically. Stored in a private folder in your Google Drive. The pilgrim downloads them in My Hajj with his code.</p>' +
+    '<input type="file" id="dfile" accept="image/*,application/pdf" class="hide">';
+  var fi = $('#dfile'), cur = '';
+  b.querySelectorAll('[data-du]').forEach(function (x) { x.onclick = function () { cur = x.dataset.du; fi.value = ''; fi.click(); }; });
+  fi.onchange = function () {
+    var f = fi.files && fi.files[0]; if (!f || !cur) return;
+    var key = cur, btn = b.querySelector('[data-du="' + key + '"]'); btn.disabled = true; btn.textContent = 'Uploading…';
+    prepFile(f).then(function (o) {
+      return api('uploadDoc', { data: { code: p.Code, key: key, mime: o.mime, data: o.data } });
+    }).then(function (j) {
+      if (!j.ok) throw new Error(j.err === 'size' ? 'File is too big (max 8 MB).' : j.err === 'type' ? 'Only photos or PDF files.' : 'Not uploaded.');
+      toast(DOCS.filter(function (d) { return d[0] === key; })[0][1] + ' uploaded'); renderDocs(p, j.list);
+    }).catch(function (e) { toast((e && e.message && e.message !== 'Failed to fetch') ? e.message : 'Not uploaded – check internet'); btn.disabled = false; btn.textContent = 'Upload'; });
+  };
+  b.querySelectorAll('[data-dx]').forEach(function (x) { x.onclick = function () {
+    var nm = DOCS.filter(function (d) { return d[0] === x.dataset.dx; })[0][1];
+    if (!confirm('Delete ' + nm + ' for ' + p.Name + '?')) return; x.disabled = true;
+    api('deleteDoc', { data: { code: p.Code, key: x.dataset.dx } }).then(function (j) { toast(nm + ' deleted'); renderDocs(p, j.list); }).catch(function () { x.disabled = false; toast('Not deleted'); });
+  }; });
+  b.querySelectorAll('[data-dv]').forEach(function (x) { x.onclick = function () {
+    var w = window.open('', '_blank'); x.disabled = true;
+    api('getDoc', { data: { code: p.Code, key: x.dataset.dv } }).then(function (j) {
+      if (!j.ok) throw new Error(); var url = URL.createObjectURL(b64Blob(j.data, j.mime));
+      if (w) w.location = url; else location.href = url;
+    }).catch(function () { if (w) w.close(); toast('Could not open'); }).then(function () { x.disabled = false; });
+  }; });
+}
+function b64Blob(b64, mime) { var bin = atob(b64), a = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return new Blob([a], { type: mime }); }
+// Photos: made smaller (longest side 1800 px, JPEG). PDFs: sent as they are (max 8 MB).
+function prepFile(f) {
+  return new Promise(function (ok, no) {
+    var isPdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+    if (!isPdf && !/^image\//.test(f.type)) return no(new Error('Only photos or PDF files.'));
+    if (isPdf) {
+      if (f.size > 8 * 1048576) return no(new Error('PDF is too big (max 8 MB).'));
+      var r = new FileReader(); r.onload = function () { ok({ mime: 'application/pdf', data: String(r.result).split(',')[1] }); }; r.onerror = no; r.readAsDataURL(f); return;
+    }
+    var img = new Image(), u = URL.createObjectURL(f);
+    img.onload = function () {
+      var m = 1800, w = img.naturalWidth, h = img.naturalHeight, k = Math.min(1, m / Math.max(w, h)), c = document.createElement('canvas');
+      c.width = Math.round(w * k); c.height = Math.round(h * k);
+      var x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(u); ok({ mime: 'image/jpeg', data: c.toDataURL('image/jpeg', 0.82).split(',')[1] });
+    };
+    img.onerror = function () { URL.revokeObjectURL(u); no(new Error('This photo could not be read. Try a JPG or PDF.')); };
+    img.src = u;
   });
 }
 
@@ -440,7 +515,7 @@ function moreView() {
 // ---------- demo data (open with ?demo) ----------
 function demoApi(b) {
   var D = demoApi.d || (demoApi.d = {
-    checks: ['Passport', 'Visa', 'Vaccination', 'Photos', 'Ihram & kit', 'Advance paid', '2nd instalment', 'Balance paid'],
+    checks: ['Passport', 'Visa', 'Vaccine & Medical card', 'Nusuk card', 'Photos', 'Ihram & kit', 'Advance paid', '2nd instalment', 'Balance paid'],
     list: [
       ['MZB-7K4Q-2P', 'Abdul Rahman Ansari', '9823012345', 'Group A', [1, 1, 1, 1, 1, 1, 1, 1]],
       ['MZB-H3WD-9X', 'Ayesha Begum Ansari', '9823012346', 'Group A', [1, 1, 1, 1, 0, 1, 1, 0]],
@@ -455,7 +530,7 @@ function demoApi(b) {
         'Madinah hotel': 'Pullman Zamzam Madinah', 'Shifting hotel': 'Aziziyah Building 14', 'Room Makkah': '1204', 'Room Madinah': '807', 'Room shifting': '3B',
         'Note for pilgrim': i === 0 ? 'Bring 2 extra passport photos to the office by 20 April.' : '', 'Added by': i % 2 ? 'basil' : 'sulait', 'Added on': '10 Nov 2026, 1:15 am', 'Updated by': '', 'Updated on': '' };
       o['Updated on'] = '';
-      ['Passport', 'Visa', 'Vaccination', 'Photos', 'Ihram & kit', 'Advance paid', '2nd instalment', 'Balance paid'].forEach(function (c, j) { o[c] = r[4][j] ? 'yes' : ''; });
+      ['Passport', 'Visa', 'Vaccine & Medical card', 'Nusuk card', 'Photos', 'Ihram & kit', 'Advance paid', '2nd instalment', 'Balance paid'].forEach(function (c, j) { o[c] = r[4][j] ? 'yes' : ''; });
       return o;
     }),
     alerts: [{ row: 3, time: '9 Nov 2026, 8:10 pm', to: 'all', title: 'Vaccination camp on Sunday', text: 'Meningitis vaccination at Meezab office, Sunday 10 am – 1 pm. Bring Aadhaar and passport copy.', show: 'yes', by: 'basil' },
@@ -472,6 +547,9 @@ function demoApi(b) {
     case 'savePilgrim': { var c = b.data.Code || 'MZB-NEW1-23'; var p = D.list.filter(function (x) { return x.Code === c; })[0];
       if (!p) { p = { Code: c, 'Active (yes/no)': 'yes', 'Added by': b.user, 'Added on': 'now' }; D.list.unshift(p); }
       Object.keys(b.data).forEach(function (k) { if (k !== 'Code') p[k] = b.data[k]; }); return { ok: true, code: c }; }
+    case 'docs': return { ok: true, list: (D.docs = D.docs || [{ key: 'passport', size: 412000, mime: 'application/pdf', on: '15 Nov 2026, 2:10 am' }, { key: 'visa', size: 238000, mime: 'image/jpeg', on: '15 Nov 2026, 2:12 am' }]) };
+    case 'uploadDoc': D.docs = (D.docs || []).filter(function (d) { return d.key !== b.data.key; }).concat([{ key: b.data.key, size: Math.round(b.data.data.length * 0.75), mime: b.data.mime, on: 'now' }]); return { ok: true, list: D.docs };
+    case 'deleteDoc': D.docs = (D.docs || []).filter(function (d) { return d.key !== b.data.key; }); return { ok: true, list: D.docs };
     default: return { ok: true };
   }
 }
