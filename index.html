@@ -111,6 +111,14 @@ optgroup{color:var(--mute)}
 .tpop{position:fixed;inset:0;z-index:20;background:#000b;display:grid;place-items:center;padding:20px}
 .tpbox{width:100%;max-width:420px;max-height:84vh;overflow:auto;background:var(--card);border:1px solid var(--g2);border-radius:20px;padding:20px;text-align:center}
 nav button{font-size:10.5px}
+.hcbig{text-align:center}.hcnum{font-size:15px;margin:6px 0}.hcnum b{font:700 40px Cinzel,serif;color:var(--g1)}
+.hcr{cursor:pointer}
+.scanov{position:fixed;inset:0;z-index:30;background:#000;display:flex;flex-direction:column}
+.scanov video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.scanbox{position:absolute;left:50%;top:44%;width:64vw;max-width:300px;aspect-ratio:1;transform:translate(-50%,-50%);border:3px solid var(--g2);border-radius:18px;box-shadow:0 0 0 2000px rgba(0,0,0,.45)}
+.scantop{position:relative;z-index:2;display:flex;justify-content:space-between;padding:calc(14px + env(safe-area-inset-top)) 16px 10px;background:linear-gradient(#000c,transparent)}
+.scanmsg{position:absolute;z-index:2;left:16px;right:16px;bottom:calc(96px + env(safe-area-inset-bottom));text-align:center;background:#000a;border-radius:12px;padding:12px;font-weight:600}
+.scanov #scx{position:absolute;z-index:2;left:16px;right:16px;bottom:calc(24px + env(safe-area-inset-bottom));width:auto}
 .demo{background:#3a2b0b;color:var(--g1);font-size:12px;text-align:center;padding:4px}
 </style>
 </head>
@@ -229,7 +237,7 @@ function fail(e) { $('#main').innerHTML = '<div class="empty">Could not load.<br
 // ---------- pilgrims ----------
 function getPilgrims(force) {
   if (S.pilgrims && !force) return Promise.resolve(S.pilgrims);
-  return api('pilgrims').then(function (j) { if (!j.ok) throw new Error(j.err); S.pilgrims = j.list; S.checks = j.checks; S.thumbs = j.thumbs || {}; return j.list; });
+  return api('pilgrims').then(function (j) { if (!j.ok) throw new Error(j.err); S.pilgrims = j.list; S.checks = j.checks; S.thumbs = j.thumbs || {}; S.tents = j.tents || {}; return j.list; });
 }
 function doneCount(p) { return S.checks.filter(function (c) { return yes(p[c]); }).length; }
 function pilgrimsView() {
@@ -454,6 +462,7 @@ var FORM = [
                ['Return flight', 'e.g. SV 762 Jeddah → Mumbai', 'text'], ['Return date & time', '', 'dt']]],
   ['Hotels & rooms', [['Makkah hotel', '', 'hotel'], ['Room Makkah', '', 'text'], ['Madinah hotel', '', 'hotel'], ['Room Madinah', '', 'text'],
                       ['Shifting hotel', '', 'hotel'], ['Room shifting', '', 'text']]],
+  ['Mina', [['Maktab', 'e.g. 92', 'text'], ['Mina tent', 'e.g. C-14', 'text']]],
   ['Note for pilgrim', [['Note for pilgrim', 'Shown in his My Hajj page', 'area']]]
 ];
 // Hotel lists: these + every hotel already given to a pilgrim. "+ Add new hotel" adds one.
@@ -536,11 +545,13 @@ function recordsView(force) {
 function renderRecords() {
   var t = S.recTab, h = '<div class="chips"><button class="chip' + (t === 'docs' ? ' on' : '') + '" data-rt="docs">Documents</button><button class="chip' + (t === 'lists' ? ' on' : '') + '" data-rt="lists">Lists</button>' +
     '<button class="chip' + (t === 'inbox' ? ' on' : '') + '" data-rt="inbox">Inbox' + (S.inbox ? ' (' + S.inbox.length + ')' : '') + '</button>' +
+    '<button class="chip' + (t === 'hc' ? ' on' : '') + '" data-rt="hc">Headcount</button>' +
+    '<button class="chip' + (t === 'tents' ? ' on' : '') + '" data-rt="tents">Mina tents</button>' +
     '<button class="chip" data-rt="refresh" style="margin-inline-start:auto">↻ Refresh</button></div>';
   $('#main').innerHTML = h + '<div id="rec"></div>';
   document.querySelectorAll('[data-rt]').forEach(function (b) { b.onclick = function () {
     if (b.dataset.rt === 'refresh') { recordsView(true); return; } S.recTab = b.dataset.rt; renderRecords(); }; });
-  if (t === 'docs') renderBoard(); else if (t === 'inbox') inboxView(); else renderLists();
+  if (t === 'docs') renderBoard(); else if (t === 'inbox') inboxView(); else if (t === 'hc') hcView(); else if (t === 'tents') renderTents(); else renderLists();
 }
 function renderBoard() {
   var A = activeP(), m = S.missing || '';
@@ -936,6 +947,121 @@ function tasksPopup() {
   }).catch(function () {});
 }
 
+// ---------- MINA TENTS (one landmark photo per tent) ----------
+function tentKey(m, t) { var k = (String(m || '').trim() + '|' + String(t || '').trim()).toLowerCase().replace(/\s+/g, ' '); return k === '|' ? '' : k; }
+function renderTents() {
+  var A = activeP(), g = {};
+  A.forEach(function (p) { var k = tentKey(p.Maktab, p['Mina tent']); if (!k) return; (g[k] = g[k] || { m: p.Maktab, t: p['Mina tent'], list: [] }).list.push(p); });
+  var keys = Object.keys(g).sort(function (a, b) { return a.localeCompare(b, undefined, { numeric: true }); }), none = A.filter(function (p) { return !tentKey(p.Maktab, p['Mina tent']); });
+  var h = '<div class="card" style="font-size:13px;color:var(--mute)">Set <b>Maktab</b> and <b>Mina tent</b> for each Haji (Edit pilgrim). Then add one landmark photo per tent here – every Haji in that tent sees it in My Hajj, even without internet.</div>';
+  h += keys.length ? keys.map(function (k) { var x = g[k], ph = (S.tents || {})[k];
+    return '<div class="card"><div style="display:flex;gap:12px;align-items:flex-start"><div class="ith" style="width:96px;height:96px">' + (ph ? '<img src="data:image/jpeg;base64,' + ph + '" alt="">' : '<span>No photo</span>') + '</div>' +
+      '<div style="flex:1"><b>Maktab ' + esc(x.m || '–') + ' · Tent ' + esc(x.t || '–') + '</b><div style="font-size:12px;color:var(--mute);margin:3px 0 8px">' + x.list.length + ' Hajis: ' + esc(x.list.map(function (p) { return p.Name; }).join(', ')) + '</div>' +
+      '<div class="row"><button class="btn sm' + (ph ? ' sec' : '') + '" data-tph="' + esc(k) + '">' + (ph ? 'Replace photo' : 'Add landmark photo') + '</button>' + (ph ? '<button class="btn sm sec" data-tpx="' + esc(k) + '">Remove</button>' : '') + '</div></div></div></div>'; }).join('')
+    : '<div class="empty">No tents set yet.</div>';
+  if (none.length) h += '<h2>Tent not set (' + none.length + ')</h2><div class="card" style="font-size:13px">' + esc(none.map(function (p) { return p.Name; }).join(', ')) + '</div>';
+  $('#rec').innerHTML = h + '<input type="file" id="tfile" accept="image/*" class="hide">';
+  var fi = $('#tfile'), cur = '';
+  document.querySelectorAll('[data-tph]').forEach(function (b) { b.onclick = function () { cur = b.dataset.tph; fi.value = ''; fi.click(); }; });
+  fi.onchange = function () { var f = fi.files && fi.files[0]; if (!f || !cur) return; var x = g[cur];
+    smallPhoto(f, 480, 44000).then(function (b64) { return api('setTentPhoto', { data: { maktab: x.m, tent: x.t, photo: b64 } }); })
+      .then(function (j) { if (!j.ok) throw new Error(); S.tents = j.tents; toast('Tent photo saved – Hajis see it in My Hajj'); renderTents(); })
+      .catch(function () { toast('Not saved – try another photo'); }); };
+  document.querySelectorAll('[data-tpx]').forEach(function (b) { b.onclick = function () { var x = g[b.dataset.tpx]; if (!confirm('Remove this tent photo?')) return;
+    api('setTentPhoto', { data: { maktab: x.m, tent: x.t, photo: '' } }).then(function (j) { S.tents = j.tents; renderTents(); }); }; });
+}
+function smallPhoto(f, max, limit) {
+  return new Promise(function (ok, no) { var img = new Image(), u = URL.createObjectURL(f);
+    img.onload = function () { var m = max, out = '';
+      for (var tries = 0; tries < 6; tries++) { var k = Math.min(1, m / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); out = c.toDataURL('image/jpeg', 0.62).split(',')[1]; if (out.length <= limit) break; m = Math.round(m * 0.8); }
+      URL.revokeObjectURL(u); out.length <= limit ? ok(out) : no(new Error('big')); };
+    img.onerror = function () { URL.revokeObjectURL(u); no(new Error('photo')); }; img.src = u; });
+}
+// ---------- HEADCOUNT (scan QR badges or tick names) + printable badges ----------
+function hcView() {
+  $('#rec').innerHTML = '<div class="card"><b>Headcount</b><div style="font-size:13px;color:var(--mute);margin:4px 0 10px">Make a list for each bus or the airport, then scan each Haji\'s QR (on his phone or printed badge) – or tick names.</div>' +
+    '<div class="row"><input id="hcn" placeholder="e.g. Bus to Mina – 8 Dhul Hijjah" maxlength="80" style="flex:3"><button class="btn sm" id="hcadd" style="flex:1">Create</button></div>' +
+    '<button class="btn sec" id="hcprint" style="margin-top:10px">🖨 Print QR badges (for Hajis without a smartphone)</button></div><div id="hcl"><div class="spin"></div></div>';
+  $('#hcadd').onclick = function () { var n = $('#hcn').value.trim(); if (!n) { toast('Write a name for the list'); return; }
+    api('hcNew', { data: { name: n } }).then(function (j) { if (!j.ok) throw new Error(); S.hc = [j.item].concat(S.hc || []); hcOpen(j.item.id); }).catch(function () { toast('Not created – check internet'); }); };
+  $('#hcprint').onclick = printBadges;
+  api('hcList').then(function (j) { S.hc = j.list || []; var b = $('#hcl'); if (!b) return;
+    b.innerHTML = S.hc.length ? S.hc.map(function (x) { var n = activeP().length; return '<div class="card pl" data-hc="' + esc(x.id) + '"><div class="m"><div class="n">' + esc(x.name) + '</div><div class="s">' + x.present.length + ' of ' + n + ' present · ' + esc(x.on) + ' · ' + esc(NAMES[x.by] || x.by) + '</div></div><span style="color:var(--g2);font-size:22px">›</span></div>'; }).join('')
+      : '<div class="empty">No headcount lists yet.</div>';
+    document.querySelectorAll('[data-hc]').forEach(function (c) { c.onclick = function () { hcOpen(c.dataset.hc); }; });
+  }).catch(function () { $('#hcl').innerHTML = '<div class="empty">Could not load.</div>'; });
+}
+function hcOpen(id) {
+  var x = (S.hc || []).filter(function (h) { return h.id === id; })[0]; if (!x) return hcView();
+  var A = activeP().slice().sort(byName), pres = {}; x.present.forEach(function (c) { pres[c] = 1; });
+  var miss = A.filter(function (p) { return !pres[p.Code]; }), here = A.filter(function (p) { return pres[p.Code]; });
+  var row = function (p) { return '<div class="tog hcr" data-hcp="' + esc(p.Code) + '"><span style="display:flex;align-items:center;gap:10px">' + avatar(p, 34) + '<span>' + esc(p.Name) + '<br><small style="color:var(--mute)">' + esc([p.Group, p['Mina tent'] ? 'Tent ' + p['Mina tent'] : ''].filter(Boolean).join(' · ')) + '</small></span></span><span class="sw' + (pres[p.Code] ? ' on' : '') + '"></span></div>'; };
+  $('#rec').innerHTML = '<button class="btn sm sec" id="hcback" style="margin-bottom:10px">‹ All lists</button><div class="card hcbig"><div style="font-size:13px;color:var(--mute)">' + esc(x.name) + '</div>' +
+    '<div class="hcnum"><b>' + here.length + '</b> of ' + A.length + ' present</div>' + (miss.length ? '<div style="color:var(--bad);font-weight:600">' + miss.length + ' missing</div>' : '<div style="color:var(--ok);font-weight:700">Everyone is here ✓</div>') +
+    '<button class="btn" id="hcscan" style="margin-top:12px">📷 Scan QR</button></div>' +
+    (miss.length ? '<h2 style="color:var(--bad)">Missing (' + miss.length + ')</h2><div class="card">' + miss.map(row).join('') + '</div>' : '') +
+    (here.length ? '<h2>Present (' + here.length + ')</h2><div class="card">' + here.map(row).join('') + '</div>' : '') +
+    '<button class="btn sm sec" id="hcdel" style="margin-top:14px">Delete this list</button>';
+  $('#hcback').onclick = hcView; $('#hcscan').onclick = function () { scanQR(x); };
+  $('#hcdel').onclick = function () { if (!confirm('Delete this headcount list?')) return; api('hcDelete', { data: { id: x.id } }).then(function () { S.hc = S.hc.filter(function (h) { return h.id !== x.id; }); hcView(); }); };
+  document.querySelectorAll('[data-hcp]').forEach(function (r) { r.onclick = function () { var c = r.dataset.hcp, on = !pres[c];
+    api('hcMark', { data: { id: x.id, code: c, present: on } }).then(function (j) { if (!j.ok) throw new Error(); x.present = j.present; hcOpen(x.id); }).catch(function () { toast('Not saved – check internet'); }); }; });
+}
+function scanQR(x) {
+  var o = document.createElement('div'); o.className = 'scanov';
+  o.innerHTML = '<video playsinline muted></video><div class="scanbox"></div><div class="scantop"><b>' + esc(x.name) + '</b><span id="scc">' + x.present.length + ' of ' + activeP().length + ' present</span></div><div class="scanmsg" id="scm">Point the camera at a Meezab QR badge</div><button class="btn" id="scx">Done</button>';
+  document.body.appendChild(o);
+  var v = o.querySelector('video'), stream = null, stop = false, last = '', lastT = 0, det = null, cv = document.createElement('canvas'), cx = cv.getContext('2d', { willReadFrequently: true });
+  var close = function () { stop = true; if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); o.remove(); hcOpen(x.id); };
+  o.querySelector('#scx').onclick = close;
+  var found = function (txt) {
+    var m = /^MZBB:(B[A-Z0-9]{7})$/.exec(String(txt || '').trim()); var now = Date.now();
+    if (!m) { if (now - lastT > 2000) { $('#scm').textContent = 'Not a Meezab badge'; lastT = now; } return; }
+    if (m[1] === last && now - lastT < 4000) return; last = m[1]; lastT = now;
+    var p = (S.pilgrims || []).filter(function (q) { return q.Badge === m[1]; })[0];
+    if (p && x.present.indexOf(p.Code) >= 0) { $('#scm').textContent = '✓ ' + p.Name + ' – already counted'; return; }
+    $('#scm').textContent = 'Saving…';
+    api('hcMark', { data: { id: x.id, badge: m[1], present: true } }).then(function (j) { if (!j.ok) throw new Error(j.err);
+      x.present = j.present; var q = findP(j.code); try { navigator.vibrate && navigator.vibrate(80); } catch (e) {}
+      $('#scm').innerHTML = '<span style="color:var(--ok)">✓ ' + esc(q ? q.Name : j.code) + '</span>'; $('#scc').textContent = x.present.length + ' of ' + activeP().length + ' present';
+    }).catch(function (e) { $('#scm').textContent = e && e.message === 'code' ? 'Badge not found – is he turned off?' : 'Not saved – check internet'; last = ''; });
+  };
+  var loop = function () { if (stop) return;
+    if (v.readyState >= 2) {
+      if (det) det.detect(v).then(function (r) { if (r && r[0]) found(r[0].rawValue); }).catch(function () {});
+      else if (window.jsQR) { var w = 480, h = Math.round(w * v.videoHeight / v.videoWidth) || 360; cv.width = w; cv.height = h; cx.drawImage(v, 0, 0, w, h);
+        var r = window.jsQR(cx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: 'dontInvert' }); if (r) found(r.data); }
+    }
+    setTimeout(loop, 250);
+  };
+  var start = function () {
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }).then(function (s) { stream = s; v.srcObject = s; v.play(); loop(); })
+      .catch(function () { $('#scm').textContent = 'Camera not allowed – allow the camera for this site, or tick names instead.'; });
+  };
+  if ('BarcodeDetector' in window) { try { det = new window.BarcodeDetector({ formats: ['qr_code'] }); } catch (e) { det = null; } }
+  if (det) start(); else loadLib('jsQR.min.js').then(start).catch(function () { $('#scm').textContent = 'Scanner could not load – check internet once, then try again.'; });
+}
+function qrSvg(text, px) { var q = window.qrcode(0, 'M'); q.addData(text); q.make(); return q.createSvgTag({ cellSize: Math.max(2, Math.round(px / (q.getModuleCount() + 8))), margin: 4 }); }
+function printBadges() {
+  var w = window.open('', '_blank'); if (!w) { toast('Allow pop-ups to print'); return; }
+  w.document.write('<p style="font:16px Arial;padding:20px">Preparing badges…</p>');
+  loadLib('qrcode.min.js').then(function () { return getPilgrims(true); }).then(function () {
+    var A = activeP().slice().sort(function (a, b) { return String(a.Group).localeCompare(String(b.Group)) || byName(a, b); });
+    var card = function (p) { var t = S.thumbs[p.Code];
+      return '<div class="bd"><div class="hd">MEEZAB E RAHEMAT · HAJJ 2027</div><div class="mid">' + (t ? '<img src="data:image/jpeg;base64,' + t + '">' : '<div class="ni">' + esc(p.Name.charAt(0)) + '</div>') +
+        '<div class="qr">' + qrSvg('MZBB:' + p.Badge, 130) + '</div></div><div class="nm">' + esc(p.Name) + '</div><div class="sm">' + esc([p.Group, p.Maktab ? 'Maktab ' + p.Maktab : '', p['Mina tent'] ? 'Tent ' + p['Mina tent'] : ''].filter(Boolean).join(' · ')) + '</div>' +
+        '<div class="sm">' + esc([p['Makkah hotel'], p['Room Makkah'] ? 'Room ' + p['Room Makkah'] : ''].filter(Boolean).join(' · ')) + '</div><div class="ft">If found, please call: +91 70384 22399 · ' + esc(LEADER_PH_TXT) + '</div></div>'; };
+    w.document.open(); w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Meezab QR badges</title><style>body{margin:10mm;font-family:Arial,sans-serif}.g{display:grid;grid-template-columns:1fr 1fr;gap:6mm}' +
+      '.bd{border:1.5px solid #A87B28;border-radius:4mm;padding:4mm;break-inside:avoid;page-break-inside:avoid}.hd{font-size:9pt;font-weight:bold;color:#7a5a12;letter-spacing:.5px;text-align:center;border-bottom:1px solid #e3d3a5;padding-bottom:2mm}' +
+      '.mid{display:flex;justify-content:space-between;align-items:center;margin:3mm 0}.mid img,.ni{width:28mm;height:28mm;border-radius:50%;object-fit:cover;border:1px solid #ccc}.ni{display:grid;place-items:center;font-size:24pt;color:#A87B28;background:#faf3df}' +
+      '.qr svg{width:32mm;height:32mm}.nm{font-size:13pt;font-weight:bold}.sm{font-size:9pt;color:#333;margin-top:1mm}.ft{font-size:7.5pt;color:#555;margin-top:2mm;border-top:1px dashed #ccc;padding-top:1.5mm}' +
+      '@media print{button{display:none}}</style></head><body><button onclick="print()" style="float:right;padding:8px 14px">Print</button><h3 style="margin:0 0 4mm">Meezab QR badges – ' + A.length + ' Hajis</h3><div class="g">' + A.map(card).join('') + '</div></body></html>');
+    w.document.close();
+  }).catch(function () { w.close(); toast('Could not prepare badges'); });
+}
+var LEADER_PH_TXT = 'Basil Ayyubi +91 77689 39338';
+
 // ---------- alerts ----------
 function alertsView() {
   setHead('ALERTS'); spin();
@@ -1034,7 +1160,7 @@ function demoApi(b) {
         'Return date & time': '24 Jun 2027, 4:15 pm', 'Airport reporting': 'Mumbai T2 – 4 hours before', 'Makkah hotel': 'Swissôtel Al Maqam',
         'Madinah hotel': 'Pullman Zamzam Madinah', 'Shifting hotel': 'Aziziyah Building 14', 'Room Makkah': ['1204', '1205', '1206', '1205', '1204', '1206'][i], 'Room Madinah': ['807', '808', '807', '808', '807', '808'][i], 'Room shifting': '3B',
         'Note for pilgrim': i === 0 ? 'Bring 2 extra passport photos to the office by 20 April.' : '', 'Added by': i % 2 ? 'basil' : 'sulait', 'Added on': '10 Nov 2026, 1:15 am', 'Updated by': '', 'Updated on': '' };
-      o['Updated on'] = ''; o.Gender = r[5]; o.Family = r[6]; o.Documents = r[7];
+      o['Updated on'] = ''; o.Gender = r[5]; o.Family = r[6]; o.Documents = r[7]; o.Badge = 'BDEMO00' + i; o.Maktab = '92'; o['Mina tent'] = i < 3 ? 'C-14' : 'C-15';
       ['Passport', 'Visa', 'Vaccine & Medical card', 'Nusuk card', 'Photos', 'Ihram & kit', 'Advance paid', '2nd instalment', 'Balance paid'].forEach(function (c, j) { o[c] = r[4][j] ? 'yes' : ''; });
       return o;
     }),
@@ -1046,7 +1172,7 @@ function demoApi(b) {
   });
   switch (b.action) {
     case 'login': return { ok: true, token: 'demo', user: b.user };
-    case 'pilgrims': return { ok: true, checks: D.checks, thumbs: D.thumbs || {}, list: D.list };
+    case 'pilgrims': return { ok: true, checks: D.checks, thumbs: D.thumbs || {}, tents: D.tents || {}, list: D.list };
     case 'alerts': return { ok: true, list: D.alerts };
     case 'leads': return { ok: true, list: D.leads };
     case 'savePilgrim': { var c = b.data.Code || 'MZB-NEW1-23'; var p = D.list.filter(function (x) { return x.Code === c; })[0];
@@ -1082,6 +1208,13 @@ function demoApi(b) {
       D.tasks = D.tasks.filter(function (x) { return x.id !== tk.id; }).concat([tk]); return { ok: true, task: tk, cal: 'ok' }; }
     case 'doneTask': { var dt = D.tasks.filter(function (x) { return x.id === b.data.id; })[0]; dt.status = b.data.done ? 'done' : 'open'; dt.doneBy = b.user; return { ok: true, task: dt }; }
     case 'deleteTask': D.tasks = D.tasks.filter(function (x) { return x.id !== b.data.id; }); return { ok: true };
+    case 'hcList': return { ok: true, list: (D.hc = D.hc || [{ id: 'H1', name: 'Bus to Mina – 8 Dhul Hijjah', by: 'basil', on: '15 Nov 2026, 5:00 am', present: ['MZB-7K4Q-2P', 'MZB-H3WD-9X', 'MZB-YC5K-3S'] }]) };
+    case 'hcNew': { var hn = { id: 'H' + Date.now(), name: b.data.name, by: b.user, on: 'now', present: [] }; D.hc = [hn].concat(D.hc || []); return { ok: true, item: hn }; }
+    case 'hcMark': { var hx = D.hc.filter(function (h) { return h.id === b.data.id; })[0], hcode = b.data.code;
+      if (!hcode && b.data.badge) { var bp = D.list.filter(function (p) { return p.Badge === b.data.badge; })[0]; if (!bp) return { ok: false, err: 'code' }; hcode = bp.Code; }
+      hx.present = hx.present.filter(function (c) { return c !== hcode; }); if (b.data.present !== false) hx.present.push(hcode); return { ok: true, code: hcode, present: hx.present }; }
+    case 'hcDelete': D.hc = D.hc.filter(function (h) { return h.id !== b.data.id; }); return { ok: true };
+    case 'setTentPhoto': D.tents = D.tents || {}; var tk2 = tentKey(b.data.maktab, b.data.tent); if (b.data.photo) D.tents[tk2] = b.data.photo; else delete D.tents[tk2]; return { ok: true, tents: D.tents };
     default: return { ok: true };
   }
 }

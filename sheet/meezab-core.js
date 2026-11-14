@@ -1,6 +1,6 @@
 // MEEZAB CORE - the real code of the "Meezab leads" Sheet. Loaded automatically by the small loader in the Sheet
 // (Meezab-loader.gs). To update the Sheet, publish a new version of this file on GitHub and raise VERSION. Nothing to paste.
-var VERSION = '6.6';
+var VERSION = '6.7';
 // MEEZAB E RAHEMAT - leads, feedback, news, My Hajj and the Admin meezab app in one Google Sheet.   (version 6.2, 10 Nov 2026)
 // New in 6.2: runs through the self-updating loader (no more copy-paste in the Sheet).
 // New in 6.3: checklist 'Vaccination' renamed 'Vaccine & Medical card', new 'Nusuk card' (last column);
@@ -15,6 +15,8 @@ var VERSION = '6.6';
 //             but not download; a 3rd phone is refused ('Phone lock' column). Admin app: Swap / Remove phone 2 / Reset.
 // New in 6.6: TASKS (voice reminders from the admin app) in a "Tasks" tab; each task also becomes a Google Calendar event
 //             (notification 30 min before and at the time; Basil invited to his tasks). Needs the Calendar line in the loader.
+// New in 6.7: Mina tent + Maktab per pilgrim, one landmark photo per tent ("Tent photos" tab), QR badge id per pilgrim
+//             ('Badge' column, not the login code), HEADCOUNT lists for buses / airport ("Headcount" tab).
 // Fix in 6.1: 'Add pilgrim' from the Admin meezab app now saves a NEW row (6.0 wrote over the Pilgrims header row).
 //             The Pilgrims tab repairs itself automatically (header put back on row 1, the pilgrim moves to row 2).
 // New in version 6 - MY HAJJ + ADMIN MEEZAB:
@@ -355,8 +357,8 @@ var PIL_HEAD = ['Code', 'Active (yes/no)', 'Name', 'Mobile', 'Package', 'Group',
   'Going flight', 'Going date & time', 'Return flight', 'Return date & time', 'Airport reporting',
   'Makkah hotel', 'Madinah hotel', 'Shifting hotel', 'Room Makkah', 'Room Madinah', 'Room shifting',
   'Passport', 'Visa', 'Vaccine & Medical card', 'Photos', 'Ihram & kit', 'Advance paid', '2nd instalment', 'Balance paid',
-  'Note for pilgrim', 'Added by', 'Added on', 'Updated by', 'Updated on', 'Nusuk card', 'Gender', 'Family', 'Documents', 'Phone lock'];   // new columns only ever go at the END
-var PIL_EDIT = PIL_HEAD.slice(2, 26).concat(['Nusuk card', 'Gender', 'Family']);   // fields the admin app may change
+  'Note for pilgrim', 'Added by', 'Added on', 'Updated by', 'Updated on', 'Nusuk card', 'Gender', 'Family', 'Documents', 'Phone lock', 'Mina tent', 'Maktab', 'Badge'];   // new columns only ever go at the END
+var PIL_EDIT = PIL_HEAD.slice(2, 26).concat(['Nusuk card', 'Gender', 'Family', 'Mina tent', 'Maktab']);   // fields the admin app may change
 var CHECKS = ['Passport', 'Visa', 'Vaccine & Medical card', 'Nusuk card', 'Photos', 'Ihram & kit', 'Advance paid', '2nd instalment', 'Balance paid'];
 var ALERT_HEAD = ['Time', 'To (all / code)', 'Title', 'Message', 'Show (yes/no)', 'By',
   'Title Urdu', 'Title Hindi', 'Title Gujarati', 'Message Urdu', 'Message Hindi', 'Message Gujarati'];
@@ -471,6 +473,7 @@ function myHajj_(d) {
     checks: checks, note: g('Note for pilgrim'),
     leader: { name: LEADER_NAME, phone: LEADER_PHONE || OFFICE_PHONE }, office: OFFICE_PHONE,
     alerts: alertsFor_(sh.a, code), photo: thumbOf_(sh.ph, code), role: role,
+    tent: g('Mina tent'), maktab: g('Maktab'), tentPhoto: tentPhoto_(ss, g('Maktab'), g('Mina tent')), badge: g('Badge') || (badges_(sh.p), str_(sh.p.getRange(row, PIL_HEAD.indexOf('Badge') + 1).getValue())),
     docs: docList_(code, false).filter(function (x) { return x.key !== 'photo'; }) };
 }
 
@@ -503,10 +506,11 @@ function admin_(d) {
   var sh = myHajjSheets_(ss), data = d.data || {};
   switch (d.action) {
     case 'pilgrims': {
+      badges_(sh.p);
       var last = sh.p.getLastRow(), list = [];
       if (last > 1) list = sh.p.getRange(2, 1, last - 1, PIL_HEAD.length).getValues().map(function (r) {
         var o = {}; PIL_HEAD.forEach(function (h, i) { o[h] = str_(r[i]); }); return o; });
-      return { ok: true, head: PIL_HEAD, checks: CHECKS, docTypes: DOC_TYPES, thumbs: thumbs_(sh.ph), list: list.reverse() };
+      return { ok: true, head: PIL_HEAD, checks: CHECKS, docTypes: DOC_TYPES, thumbs: thumbs_(sh.ph), tents: tentList_(ss), list: list.reverse() };
     }
     case 'savePilgrim': {
       var code = cleanCode_(data.Code), row = code ? findRow_(sh.p, code) : 0, now = new Date();
@@ -670,6 +674,45 @@ function admin_(d) {
       tsd.getRange(drow, 1, 1, TASK_HEAD.length).setValues([dv]); calDone_(dv[7], dv[1], isDone);
       log_(ss, user, isDone ? 'task done' : 'task reopened', String(dv[1]).slice(0, 80));
       return { ok: true, task: taskObj_(dv) };
+    }
+    case 'setTentPhoto': {
+      var tk = tentKey_(data.maktab, data.tent); if (!tk) return { ok: false, err: 'tent' };
+      var tp = sheet_(ss, 'Tent photos', TENT_HEAD), tb = String(data.photo || '').replace(/[^A-Za-z0-9+/=]/g, '');
+      if (tb.length > 45000) return { ok: false, err: 'size' };
+      var tr = 0, tlast = tp.getLastRow();
+      if (tlast > 1) tp.getRange(2, 1, tlast - 1, 1).getValues().forEach(function (r, i) { if (String(r[0]) === tk) tr = i + 2; });
+      var tvals = [tk, clean_(data.maktab, 40), clean_(data.tent, 40), tb, new Date(), user];
+      if (!tb) { if (tr) tp.deleteRow(tr); } else if (tr) tp.getRange(tr, 1, 1, tvals.length).setValues([tvals]); else tp.appendRow(tvals);
+      log_(ss, user, tb ? 'tent photo' : 'tent photo removed', tk);
+      return { ok: true, tents: tentList_(ss) };
+    }
+    case 'hcList': {
+      var hs = sheet_(ss, 'Headcount', HC_HEAD), hl = hs.getLastRow(), hout = [];
+      if (hl > 1) hout = hs.getRange(2, 1, hl - 1, HC_HEAD.length).getValues().filter(function (r) { return r[0]; }).map(hcObj_);
+      return { ok: true, list: hout.reverse().slice(0, 50) };
+    }
+    case 'hcNew': {
+      var hn = clean_(data.name, 80); if (!hn) return { ok: false, err: 'name' };
+      var hrow = ['H' + Utilities.getUuid().replace(/-/g, '').slice(0, 9), hn, user, new Date(), '', new Date()];
+      sheet_(ss, 'Headcount', HC_HEAD).appendRow(hrow); log_(ss, user, 'headcount new', hn);
+      return { ok: true, item: hcObj_(hrow) };
+    }
+    case 'hcMark': {
+      var hsh = sheet_(ss, 'Headcount', HC_HEAD), hid = String(data.id || ''), hr2 = 0, hlast = hsh.getLastRow();
+      if (hlast > 1) hsh.getRange(2, 1, hlast - 1, 1).getValues().forEach(function (r, i) { if (String(r[0]) === hid) hr2 = i + 2; });
+      if (!hr2) return { ok: false, err: 'none' };
+      var hc = cleanCode_(data.code);
+      if (!hc && data.badge) { var bl = sh.p.getLastRow(); if (bl > 1) sh.p.getRange(2, 1, bl - 1, PIL_HEAD.length).getValues().forEach(function (r) { if (String(r[PIL_HEAD.indexOf('Badge')]) === String(data.badge).toUpperCase()) hc = String(r[0]); }); }
+      if (!hc || !findRow_(sh.p, hc)) return { ok: false, err: 'code' };
+      var cur = String(hsh.getRange(hr2, 5).getValue() || '').split(',').filter(Boolean), on = data.present !== false && data.present !== 'false';
+      cur = cur.filter(function (c) { return c !== hc; }); if (on) cur.push(hc);
+      hsh.getRange(hr2, 5, 1, 2).setValues([[cur.join(','), new Date()]]);
+      return { ok: true, code: hc, present: cur };
+    }
+    case 'hcDelete': {
+      var hd = sheet_(ss, 'Headcount', HC_HEAD), hdl = hd.getLastRow();
+      if (hdl > 1) hd.getRange(2, 1, hdl - 1, 1).getValues().forEach(function (r, i) { if (String(r[0]) === String(data.id)) hd.deleteRow(i + 2); });
+      return { ok: true };
     }
     case 'resetPhone': case 'phoneSwap': case 'phoneRemove2': {
       var rc = cleanCode_(data.code), rr = rc ? findRow_(sh.p, rc) : 0; if (!rr) return { ok: false, err: 'code' };
@@ -966,3 +1009,26 @@ function calDone_(id, text, done) {
   try { var ev = CalendarApp.getDefaultCalendar().getEventById(id); if (!ev) return;
     var t = ev.getTitle().replace(/^✓ /, ''); ev.setTitle(done ? '✓ ' + t : t); ev.removeAllReminders(); if (!done) { ev.addPopupReminder(30); ev.addPopupReminder(0); } } catch (x) {}
 }
+
+
+// ======================= MINA TENTS, QR BADGES, HEADCOUNT (version 6.7) =======================
+var TENT_HEAD = ['Key', 'Maktab', 'Tent', 'Photo (small copy - do not edit)', 'Updated', 'By'];
+var HC_HEAD = ['ID', 'Name (e.g. Bus to Mina)', 'Created by', 'Created on', 'Present (codes)', 'Updated'];
+function tentKey_(maktab, tent) { var k = (String(maktab || '').trim() + '|' + String(tent || '').trim()).toLowerCase().replace(/\s+/g, ' '); return k === '|' ? '' : k; }
+function tentList_(ss) {
+  var t = ss.getSheetByName('Tent photos'); if (!t || t.getLastRow() < 2) return {};
+  var o = {}; t.getRange(2, 1, t.getLastRow() - 1, 4).getValues().forEach(function (r) { if (r[0] && r[3]) o[String(r[0])] = String(r[3]); });
+  return o;
+}
+function tentPhoto_(ss, maktab, tent) { var k = tentKey_(maktab, tent); return k ? (tentList_(ss)[k] || '') : ''; }
+// QR badge id: 8 letters/numbers, different from the login code (scanning a badge can never open My Hajj).
+function newBadge_(have) { for (var n = 0; n < 50; n++) { var b = Utilities.getUuid().replace(/-/g, ''), s = 'B';
+  for (var i = 0; i < 7; i++) s += CODE_CHARS.charAt(parseInt(b.substr(i * 2, 2), 16) % CODE_CHARS.length); if (!have[s]) return s; } throw new Error('badge'); }
+function badges_(p) {
+  var last = p.getLastRow(); if (last < 2) return;
+  var col = PIL_HEAD.indexOf('Badge') + 1, r = p.getRange(2, col, last - 1, 1).getValues(), codes = p.getRange(2, 1, last - 1, 1).getValues(), have = {}, ch = false;
+  r.forEach(function (x) { if (x[0]) have[String(x[0])] = 1; });
+  r.forEach(function (x, i) { if (!x[0] && codes[i][0]) { x[0] = newBadge_(have); have[x[0]] = 1; ch = true; } });
+  if (ch) p.getRange(2, col, last - 1, 1).setValues(r);
+}
+function hcObj_(r) { return { id: String(r[0]), name: String(r[1]), by: String(r[2]), on: str_(r[3]), present: String(r[4] || '').split(',').filter(Boolean), upd: str_(r[5]) }; }
