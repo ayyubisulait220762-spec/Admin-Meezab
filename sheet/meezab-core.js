@@ -1,6 +1,7 @@
 // MEEZAB CORE - the real code of the "Meezab leads" Sheet. Loaded automatically by the small loader in the Sheet
 // (Meezab-loader.gs). To update the Sheet, publish a new version of this file on GitHub and raise VERSION. Nothing to paste.
-var VERSION = '6.7';
+var VERSION = '6.8';
+// New in 6.8: faster – many headcount scans saved in one call (hcMarkMany); read-only lists no longer wait in the queue.
 // MEEZAB E RAHEMAT - leads, feedback, news, My Hajj and the Admin meezab app in one Google Sheet.   (version 6.2, 10 Nov 2026)
 // New in 6.2: runs through the self-updating loader (no more copy-paste in the Sheet).
 // New in 6.3: checklist 'Vaccination' renamed 'Vaccine & Medical card', new 'Nusuk card' (last column);
@@ -168,7 +169,8 @@ function doPost(e) {
   var d;
   try { d = JSON.parse(e && e.postData && e.postData.contents || ''); } catch (x) { return out_('bad request'); }
   if (!d || typeof d !== 'object') return out_('bad request');
-  if (d.type === 'myhajjdoc' || (d.type === 'admin' && (d.action === 'inboxAdd' || d.action === 'getInbox' || d.action === 'getDoc' || d.action === 'hcGet'))) {
+  // big files, text reading and read-only lists skip the queue (6.8: lists too, so two phones never wait for each other)
+  if (d.type === 'myhajjdoc' || (d.type === 'admin' && /^(inboxAdd|getInbox|getDoc|hcGet|hcList|alerts|leads|tasks|docs|inbox)$/.test(String(d.action)))) {
     try { return json_(d.type === 'myhajjdoc' ? myHajjDoc_(d) : admin_(d)); }       // big files / text reading: no queue for others
     catch (x) { return json_({ ok: false, err: 'error' }); }
   }
@@ -713,6 +715,26 @@ function admin_(d) {
       hsh.getRange(hr2, 5, 1, 2).setValues([[cur.join(','), new Date()]]);
       var hobj = hcObj_(hsh.getRange(hr2, 1, 1, HC_HEAD.length).getValues()[0]);
       return { ok: true, code: hc, moved: moved, present: hobj.present, buses: hobj.buses };
+    }
+    case 'hcMarkMany': {                                         // 6.8: many scans saved in one call (fast scanning)
+      var mh = sheet_(ss, 'Headcount', HC_HEAD), mid = String(data.id || ''), mr = 0, ml = mh.getLastRow();
+      if (ml > 1) mh.getRange(2, 1, ml - 1, 1).getValues().forEach(function (r, i) { if (String(r[0]) === mid) mr = i + 2; });
+      if (!mr) return { ok: false, err: 'none' };
+      var items = Array.isArray(data.items) ? data.items.slice(0, 60) : [], pl = sh.p.getLastRow(), byBadge = {}, codes = {};
+      if (pl > 1) { var pc = sh.p.getRange(2, 1, pl - 1, 2).getValues(), pb = sh.p.getRange(2, PIL_HEAD.indexOf('Badge') + 1, pl - 1, 1).getValues();
+        pc.forEach(function (r, i) { var c = String(r[0]); if (!c) return; codes[c] = String(r[1]).toLowerCase() !== 'no'; if (pb[i][0]) byBadge[String(pb[i][0]).toUpperCase()] = c; }); }
+      var mcur = String(mh.getRange(mr, 5).getValue() || '').split(',').filter(Boolean), res = [];
+      items.forEach(function (it) {
+        var c = cleanCode_(it.code) || byBadge[String(it.badge || '').toUpperCase()] || '';
+        if (!c || !(c in codes)) { res.push({ badge: it.badge || '', code: it.code || '', err: 'code' }); return; }
+        var b = clean_(it.bus, 20).replace(/[~,]/g, ' ') || 'Bus', on = it.on !== false && it.on !== 'false', mv = '';
+        mcur = mcur.filter(function (e) { var q = e.split('~'); if (q[0] === c) { if (on && (q[1] || '') !== b) mv = q[1] || ''; return false; } return true; });
+        if (on) mcur.push(c + '~' + b);
+        res.push({ code: c, moved: mv });
+      });
+      mh.getRange(mr, 5, 1, 2).setValues([[mcur.join(','), new Date()]]);
+      var mo = hcObj_(mh.getRange(mr, 1, 1, HC_HEAD.length).getValues()[0]);
+      return { ok: true, results: res, present: mo.present, buses: mo.buses };
     }
     case 'hcGet': {                                              // light refresh, every few seconds while a list is open
       var hg = sheet_(ss, 'Headcount', HC_HEAD), hgl = hg.getLastRow(), hit = null;

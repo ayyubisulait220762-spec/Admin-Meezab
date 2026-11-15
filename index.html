@@ -119,6 +119,22 @@ nav button{font-size:10.5px}
 .scantop{position:relative;z-index:2;display:flex;justify-content:space-between;padding:calc(14px + env(safe-area-inset-top)) 16px 10px;background:linear-gradient(#000c,transparent)}
 .scanmsg{position:absolute;z-index:2;left:16px;right:16px;bottom:calc(96px + env(safe-area-inset-bottom));text-align:center;background:#000a;border-radius:12px;padding:12px;font-weight:600}
 .scanov #scx{position:absolute;z-index:2;left:16px;right:16px;bottom:calc(24px + env(safe-area-inset-bottom));width:auto}
+.hsi{background:none;border:0;font-size:18px;padding:4px 6px;line-height:1}
+.hsb{width:100%;display:flex;align-items:center;gap:10px;text-align:start;background:var(--card2);border:1px solid var(--g3);border-radius:14px;padding:13px 14px;color:var(--mute);font-size:15px;margin-bottom:4px}
+.hsb span{font-size:16px}
+#srch{position:fixed;inset:0;z-index:40;background:rgba(8,7,10,.97);display:flex;flex-direction:column;padding-top:env(safe-area-inset-top)}
+.sbar{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.sbar input{flex:1;font-size:16px;border-color:var(--g3)}
+.sbar button{background:none;border:0;font-size:20px;color:var(--g2);padding:6px 8px}
+#sres{flex:1;overflow-y:auto;padding:4px 12px calc(20px + env(safe-area-inset-bottom))}
+.sg{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--g2);margin:14px 4px 6px}
+.si{width:100%;display:flex;align-items:center;gap:12px;text-align:start;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:6px;color:var(--text)}
+.si:active{background:var(--card2)}
+.sic{width:36px;height:36px;flex:none;border-radius:10px;background:var(--card2);display:grid;place-items:center;font-size:18px}
+.sm2{flex:1;min-width:0}.sm2 b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sm2 small{display:block;color:var(--mute);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sar{color:var(--g2);font-size:20px}
+body.noscroll{overflow:hidden}
+#updbar{position:fixed;left:16px;right:16px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:12;border:1px solid var(--g2);background:#221d14;color:var(--g1);border-radius:12px;padding:12px;font-weight:600}
 .demo{background:#3a2b0b;color:var(--g1);font-size:12px;text-align:center;padding:4px}
 </style>
 </head>
@@ -139,7 +155,7 @@ nav button{font-size:10.5px}
 
 <!-- APP -->
 <div id="app" class="hide">
-  <header><button class="back hide" id="back" aria-label="Back">‹</button><h1 class="cz gt" id="title">PILGRIMS</h1><span class="who" id="who"></span></header>
+  <header><button class="back hide" id="back" aria-label="Back">‹</button><h1 class="cz gt" id="title">PILGRIMS</h1><button class="hsi" id="hsi" aria-label="Search">🔍</button><span class="who" id="who"></span></header>
   <main id="main"></main>
   <button class="fab hide" id="fab" aria-label="Add">+</button>
   <nav>
@@ -208,7 +224,7 @@ function doLogin() {
 }
 function logout(silent) {
   if (!silent && S.token) api('logout').catch(function () {});
-  store({ user: S.user }); S.token = ''; S.pilgrims = S.leads = S.alerts = null;
+  cClear(); store({ user: S.user }); S.token = ''; S.pilgrims = S.leads = S.alerts = S.tasks = S.hc = null; S.psig = ''; S.pAt = 0;
   showLogin(); if (silent) toast('Please log in again');
 }
 
@@ -218,10 +234,16 @@ function startApp() {
   $('#who').textContent = NAMES[S.user] || S.user;
   go(S.tab);
   setTimeout(tasksPopup, 1200);
+  setTimeout(function () {                                   // quietly fill the saved copies so every screen opens at once
+    getPilgrims().catch(function () {});
+    [['a', 'alerts'], ['l', 'leads'], ['h', 'hcList']].forEach(function (x) { api(x[1]).then(function (j) { if (j.ok) cPut(x[0], j); }).catch(function () {}); });
+    if (!('BarcodeDetector' in window)) loadLib('jsQR.min.js').catch(function () {});
+  }, 1500);
 }
 document.querySelectorAll('nav button').forEach(function (b) { b.onclick = function () { go(b.dataset.t); }; });
+$('#hsi').onclick = openSearch;
 function setHead(t, back) {
-  $('#title').textContent = t; $('#back').classList.toggle('hide', !back);
+  $('#title').textContent = t; $('#back').classList.toggle('hide', !back); S.view = back ? 'detail' : S.tab;
   $('#back').onclick = back || null; window.scrollTo(0, 0);
 }
 function go(tab) {
@@ -235,26 +257,154 @@ function spin() { $('#main').innerHTML = '<div class="spin"></div>'; }
 function fail(e) { $('#main').innerHTML = '<div class="empty">Could not load.<br>' + esc(e.message || 'Check internet') + '<br><br><button class="btn sm sec" onclick="go(S.tab)">Try again</button></div>'; }
 
 // ---------- pilgrims ----------
-function getPilgrims(force) {
-  if (S.pilgrims && !force) return Promise.resolve(S.pilgrims);
-  return api('pilgrims').then(function (j) { if (!j.ok) throw new Error(j.err); S.pilgrims = j.list; S.checks = j.checks; S.thumbs = j.thumbs || {}; S.tents = j.tents || {}; return j.list; });
+// ---------- SPEED: every screen shows the last saved copy at once, then quietly updates from the Sheet ----------
+var CK = 'mz_c_';
+function cKey(k) { return CK + S.user + '_' + k; }
+function cGet(k) { try { var v = localStorage.getItem(cKey(k)); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
+function cPut(k, v) { try { localStorage.setItem(cKey(k), JSON.stringify(v)); return true; } catch (e) { return false; } }
+function cClear() { try { Object.keys(localStorage).forEach(function (k) { if (k.indexOf(CK) === 0 || k.indexOf('mz_tp_') === 0) localStorage.removeItem(k); }); } catch (e) {} }
+function typing() { var a = document.activeElement; return a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && !a.closest('#srch'); }
+// re-draw the screen the user is looking at, only if it is a main list and he is not typing
+function refreshView() {
+  if (S.view !== S.tab || typing()) return;
+  var y = window.scrollY;
+  if (S.tab === 'pilgrims') renderPilgrims();
+  else if (S.tab === 'records') { if (S.recTab === 'docs' || S.recTab === 'lists' || S.recTab === 'tents') renderRecords(); else return; }
+  else return;
+  window.scrollTo(0, y);
 }
+// cached screen: draw saved copy now (or a spinner), fetch, re-draw only if something changed and the user is still there
+function cachedLoad(key, action, apply, render) {
+  var tab = S.tab, c = cGet(key);
+  if (c) { apply(c); render(); } else spin();
+  return api(action).then(function (j) {
+    if (!j.ok) throw new Error(j.err);
+    var same = c && JSON.stringify(c) === JSON.stringify(j);
+    apply(j); cPut(key, j);
+    if (!same && S.tab === tab && S.view === tab && !typing()) { var y = window.scrollY; render(); window.scrollTo(0, y); }
+  }).catch(function (e) { if (!c) fail(e); });
+}
+function pSig(j) { return JSON.stringify([j.list, j.checks, j.tents]) + '|' + Object.keys(j.thumbs || {}).sort().join(); }
+function setP(j) { S.pilgrims = j.list; S.checks = j.checks || []; S.thumbs = j.thumbs || {}; S.tents = j.tents || {}; }
+function fetchPilgrims() {
+  if (S.pf) return S.pf;
+  S.pf = api('pilgrims').then(function (j) {
+    S.pf = null; if (!j.ok) throw new Error(j.err);
+    var sig = pSig(j); S.pChanged = sig !== S.psig; S.psig = sig; S.pAt = Date.now(); setP(j);
+    var o = { list: j.list, checks: j.checks, thumbs: j.thumbs, tents: j.tents };
+    if (!cPut('p', o)) { o.thumbs = {}; cPut('p', o); }                 // phone storage full: keep the list without photos
+    return j.list;
+  }, function (e) { S.pf = null; throw e; });
+  return S.pf;
+}
+function bgPilgrims() {
+  if (S.pf || Date.now() - (S.pAt || 0) < 15000) return;
+  fetchPilgrims().then(function () { if (S.pChanged) refreshView(); }).catch(function () {});
+}
+function getPilgrims(force) {
+  if (!S.pilgrims && !force) { var c = cGet('p'); if (c && c.list) { setP(c); S.psig = pSig(c); } }
+  if (S.pilgrims && !force) { bgPilgrims(); return Promise.resolve(S.pilgrims); }
+  return fetchPilgrims();
+}
+function whenEl(sel, fn, n) { var e = $(sel); if (e) { fn(); return; } if ((n || 0) > 50) return; setTimeout(function () { whenEl(sel, fn, (n || 0) + 1); }, 100); }
+
+// ---------- SEARCH: type anything – a Haji, a feature, a task or a lead – and tap to open ----------
+function recGo(t, extra) { return function () { S.recTab = t; if (extra) extra(); go('records'); }; }
+function feats() {
+  var F = [
+    ['➕', 'Add pilgrim', 'new haji naya register jodo add', function () { go('pilgrims'); editPilgrim(null); }],
+    ['👥', 'All pilgrims', 'list hajis sab', function () { S.filter = 'all'; go('pilgrims'); }],
+    ['⏳', 'Pending pilgrims', 'baaki incomplete checklist pending', function () { S.filter = 'pending'; go('pilgrims'); }],
+    ['🚫', 'Turned off pilgrims', 'inactive band off', function () { S.filter = 'off'; go('pilgrims'); }],
+    ['📷', 'Headcount / Scan QR', 'bus ginti scan qr count airport attendance headcount', recGo('hc')],
+    ['🖨', 'Print QR badges', 'badge print card qr label', function () { S.recTab = 'hc'; go('records'); printBadges(); }],
+    ['📥', 'Bulk upload / Inbox', 'bulk zip folder many upload inbox visa tickets passports', recGo('inbox')],
+    ['📄', 'Documents board', 'documents uploaded pending kagaz records', recGo('docs', function () { S.missing = ''; })],
+    ['⛺', 'Mina tents', 'tent khema khaima maktab mina photo', recGo('tents')],
+    ['📋', 'All Hujjaj list', 'list print share all', recGo('lists', function () { S.listK = 'all'; })],
+    ['👪', 'Family-wise list', 'family ghar parivar', recGo('lists', function () { S.listK = 'family'; })],
+    ['🚻', 'Gender-wise list', 'gender male female mard aurat', recGo('lists', function () { S.listK = 'gender'; })],
+    ['🚌', 'Group-wise list', 'group', recGo('lists', function () { S.listK = 'group'; })],
+    ['🏨', 'Rooming list', 'room kamra hotel rooming', recGo('lists', function () { S.listK = 'rooms'; })],
+    ['☑', 'Pending checklist list', 'pending baaki checklist payment', recGo('lists', function () { S.listK = 'pending'; })],
+    ['🎤', 'Speak a task', 'voice bolo reminder yaad task kaam mic', function () { go('tasks'); whenEl('#micb', startVoice); }],
+    ['⌨', 'Type a task', 'write likho reminder task kaam', function () { go('tasks'); taskCard(null, ''); }],
+    ['✅', 'Tasks', 'tasks kaam reminders calendar todo', function () { go('tasks'); }],
+    ['🔔', 'Send alert to all', 'message sandesh alert notify sab broadcast', function () { go('alerts'); composeAlert('all'); }],
+    ['📨', 'Sent alerts', 'messages alerts history', function () { go('alerts'); }],
+    ['📞', 'Leads', 'enquiry leads calls inquiry customers', function () { S.leadFilter = 'all'; go('leads'); }],
+    ['🆕', 'New leads', 'new enquiry fresh leads', function () { S.leadFilter = 'New'; go('leads'); }],
+    ['🌐', 'Open pilgrim app', 'website pilgrim app site', function () { window.open(APP_LINK, '_blank'); }],
+    ['🚪', 'Log out', 'logout sign out', function () { logout(false); }]
+  ];
+  DOCS.forEach(function (d) { F.push(['❗', 'Missing: ' + d[1], 'missing pending ' + d[1] + ' ' + d[0], recGo('docs', function () { S.missing = d[0]; })]); });
+  return F;
+}
+function norm(t) { return String(t || '').toLowerCase().replace(/[^a-z0-9؀-ۿऀ-ॿ ]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+function score(text, q) {
+  var t = norm(text), w = q.split(' '), sc = 0;
+  for (var i = 0; i < w.length; i++) { var x = w[i]; if (!x) continue; var at = (' ' + t).indexOf(' ' + x); if (at < 0) { if (t.indexOf(x) < 0) return 0; sc += 1; } else sc += at === 0 ? 4 : 2; }
+  return sc;
+}
+function openSearch() {
+  var o = $('#srch'); if (o) { $('#sq').focus(); return; }
+  o = document.createElement('div'); o.id = 'srch';
+  o.innerHTML = '<div class="sbar"><span>🔍</span><input id="sq" type="search" autocomplete="off" enterkeyhint="go" placeholder="Search Haji, feature, task, lead…"><button id="sx" aria-label="Close">✕</button></div><div id="sres"></div>';
+  document.body.appendChild(o); document.body.classList.add('noscroll');
+  var q = $('#sq'); q.value = S.lastQ || ''; q.focus(); if (q.value) q.select();
+  q.oninput = function () { S.lastQ = q.value; drawSearch(); };
+  q.onkeydown = function (e) { if (e.key === 'Enter') { var f = $('#sres [data-si]'); if (f) f.click(); } if (e.key === 'Escape') closeSearch(); };
+  $('#sx').onclick = closeSearch;
+  if (!S.pilgrims) getPilgrims().then(drawSearch).catch(function () {});
+  if (!S.tasks) { var ct = cGet('t'); if (ct) S.tasks = ct.list; }
+  if (!S.leads) { var cl = cGet('l'); if (cl) S.leads = cl.list; }
+  drawSearch();
+}
+function closeSearch() { var o = $('#srch'); if (o) o.remove(); document.body.classList.remove('noscroll'); }
+function drawSearch() {
+  var box = $('#sres'); if (!box) return; var q = norm($('#sq').value), items = [], F = feats();
+  if (!q) {
+    items = ['Add pilgrim', 'Headcount / Scan QR', 'Bulk upload / Inbox', 'Speak a task', 'Send alert to all', 'Print QR badges', 'Mina tents', 'Rooming list']
+      .map(function (n) { var f = F.filter(function (x) { return x[1] === n; })[0]; return { g: 'Quick actions', ic: f[0], t: f[1], run: f[3] }; });
+  } else {
+    var qc = q.replace(/ /g, '');
+    F.forEach(function (f) { var s = score(f[1] + ' ' + f[2], q); if (s) items.push({ g: 'Features', s: s + (norm(f[1]).indexOf(q) === 0 ? 5 : 0), ic: f[0], t: f[1], run: f[3] }); });
+    (S.pilgrims || []).forEach(function (p) {
+      var s = score([p.Name, p.Family, p.Group, p.Package, p['Makkah hotel'], p['Mina tent'] ? (q.split(' ').length > 1 ? 'tent ' : '') + p['Mina tent'] : ''].join(' '), q);   // 'tent c-12' finds that tent; just 'tent' opens the feature, not every Haji
+      if (!s && qc.length >= 4 && (shortCode(p.Code).toLowerCase().indexOf(qc) >= 0 || String(p.Mobile || '').indexOf(qc) >= 0)) s = 6;
+      if (s) items.push({ g: 'Pilgrims', s: s, p: p, t: p.Name, sub: [shortCode(p.Code), p.Group, p['Active (yes/no)'] === 'no' ? 'turned off' : ''].filter(Boolean).join(' · '), run: function () { S.tab = 'pilgrims'; document.querySelectorAll('nav button').forEach(function (b) { b.classList.toggle('on', b.dataset.t === 'pilgrims'); }); showPilgrim(p.Code); } });
+    });
+    (S.tasks || []).forEach(function (x) { var s = score(x.text, q); if (s) items.push({ g: 'Tasks', s: s, ic: x.status === 'done' ? '✅' : '⏰', t: x.text, sub: fmtDue(x.due) + ' · ' + (WHO[x.for] || x.for), run: function () { go('tasks'); taskCard(x, ''); } }); });
+    (S.leads || []).forEach(function (l) { var s = score([l.Name, l.City, l['Package interest']].join(' '), q); if (!s && qc.length >= 4 && String(l.Mobile || '').indexOf(qc) >= 0) s = 6;
+      if (s) items.push({ g: 'Leads', s: s, ic: '📞', t: l.Name, sub: [l.City, l.Status || 'New', l.Mobile].filter(Boolean).join(' · '), run: function () { S.leadFilter = 'all'; go('leads'); } }); });
+    var order = { Features: 0, Pilgrims: 1, Tasks: 2, Leads: 3 };
+    items.sort(function (a, b) { return order[a.g] - order[b.g] || b.s - a.s; });
+    var per = {}; items = items.filter(function (x) { per[x.g] = (per[x.g] || 0) + 1; return per[x.g] <= (x.g === 'Pilgrims' ? 25 : 8); });
+  }
+  var h = '', last = '';
+  items.forEach(function (x, i) { if (x.g !== last) { h += '<div class="sg">' + esc(x.g) + '</div>'; last = x.g; }
+    h += '<button class="si" data-si="' + i + '">' + (x.p ? avatar(x.p, 36) : '<span class="sic">' + x.ic + '</span>') + '<span class="sm2"><b>' + esc(x.t) + '</b>' + (x.sub ? '<small>' + esc(x.sub) + '</small>' : '') + '</span><span class="sar">›</span></button>'; });
+  box.innerHTML = h || '<div class="empty">Nothing found for "' + esc($('#sq').value) + '".<br><small>Try a name, a code like 7K4Q2P, or words like bus, visa, tent, task.</small></div>';
+  box.querySelectorAll('[data-si]').forEach(function (b) { b.onclick = function () { var x = items[+b.dataset.si]; closeSearch(); x.run(); }; });
+}
+
+
 function doneCount(p) { return S.checks.filter(function (c) { return yes(p[c]); }).length; }
 function pilgrimsView() {
-  setHead('PILGRIMS'); spin();
-  getPilgrims().then(renderPilgrims).catch(fail);
+  setHead('PILGRIMS'); if (!S.pilgrims && !cGet('p')) spin();
+  getPilgrims().then(function () { if (S.tab === 'pilgrims' && S.view === 'pilgrims') renderPilgrims(); }).catch(fail);
 }
 function renderPilgrims() {
   var all = S.pilgrims, active = all.filter(function (p) { return p['Active (yes/no)'] !== 'no'; });
   var pend = active.filter(function (p) { return doneCount(p) < S.checks.length; });
   var groups = {}; active.forEach(function (p) { if (p.Group) groups[p.Group] = 1; });
-  var f = S.filter, q = S.q.toLowerCase();
+  var f = S.filter, q = '';
   var list = (f === 'off' ? all.filter(function (p) { return p['Active (yes/no)'] === 'no'; }) : f === 'pending' ? pend : f.indexOf('g:') === 0 ? active.filter(function (p) { return p.Group === f.slice(2); }) : active)
     .filter(function (p) { return !q || (p.Name + ' ' + p.Code + ' ' + shortCode(p.Code) + ' ' + p.Mobile + ' ' + p.Group + ' ' + (p.Family || '')).toLowerCase().indexOf(q) >= 0 || (q.replace(/[^a-z0-9]/g, '').length >= 4 && shortCode(p.Code).toLowerCase().indexOf(q.replace(/[^a-z0-9]/g, '')) >= 0); });
   var chips = [['all', 'All'], ['pending', 'Pending'], ['off', 'Turned off']].concat(Object.keys(groups).sort().map(function (g) { return ['g:' + g, g]; }));
   $('#main').innerHTML =
     '<div class="stat"><div><b>' + active.length + '</b><span>Pilgrims</span></div><div><b>' + (active.length - pend.length) + '</b><span>All ready</span></div><div><b>' + pend.length + '</b><span>Pending</span></div></div>' +
-    '<input id="q" type="search" placeholder="Search name, code, mobile" value="' + esc(S.q) + '">' +
+    '<button class="hsb" id="hsb"><span>🔍</span> Search Haji, feature, task, lead…</button>' +
     '<div class="chips">' + chips.map(function (c) { return '<button class="chip' + (f === c[0] ? ' on' : '') + '" data-f="' + esc(c[0]) + '">' + esc(c[1]) + '</button>'; }).join('') + '</div>' +
     (list.length ? list.map(function (p) {
       var d = doneCount(p), n = S.checks.length || 8;
@@ -263,7 +413,7 @@ function renderPilgrims() {
         '<div class="bar"><i style="width:' + Math.round(d / n * 100) + '%"></i></div></div>' +
         '<div style="text-align:right">' + (p['Active (yes/no)'] === 'no' ? '<span class="badge off">Off</span>' : '<span class="s" style="font-size:12px;color:var(--mute)">' + d + '/' + n + '</span>') + '</div></div>';
     }).join('') : '<div class="empty">' + (all.length ? 'No pilgrim matches.' : 'No pilgrims yet.<br>Tap + to add the first one.') + '</div>');
-  var qi = $('#q'); qi.oninput = function () { S.q = qi.value; var pos = qi.selectionStart; renderPilgrims(); var n = $('#q'); n.focus(); n.setSelectionRange(pos, pos); };
+  $('#hsb').onclick = openSearch;
   document.querySelectorAll('.chip').forEach(function (c) { c.onclick = function () { S.filter = c.dataset.f; renderPilgrims(); }; });
   document.querySelectorAll('.pl[data-c]').forEach(function (c) { c.onclick = function () { showPilgrim(c.dataset.c); }; });
 }
@@ -352,7 +502,8 @@ var DOCS = [['photo', 'Haji photo'], ['passport', 'Passport'], ['visa', 'Visa'],
 function docName(k) { return (DOCS.filter(function (d) { return d[0] === k; })[0] || [k, k])[1]; }
 function kb(n) { return n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
 function loadDocs(p) {
-  api('docs', { data: { code: p.Code } }).then(function (j) { if (!j.ok) throw new Error(); renderDocs(p, j.list); })
+  var cd = cGet('d_' + p.Code); if (cd) renderDocs(p, cd);
+  api('docs', { data: { code: p.Code } }).then(function (j) { if (!j.ok) throw new Error(); if (JSON.stringify(j.list) !== JSON.stringify(cd) && $('#docs')) renderDocs(p, j.list); })
     .catch(function () { var b = $('#docs'); if (b) b.innerHTML = '<span style="color:var(--mute)">Could not load documents. <button class="btn sm sec" id="drt">Try again</button></span>'; var r = $('#drt'); if (r) r.onclick = function () { loadDocs(p); }; });
 }
 // keeps the Pilgrims list / Records tab in step after an upload or delete
@@ -369,7 +520,7 @@ function docRow(d, page, h, can2) {
     (can2 ? '<div style="padding:0 0 8px 14px"><button class="btn sm sec" data-du="' + d[0] + ':2">+ Add page 2</button></div>' : '');
 }
 function renderDocs(p, list) {
-  var b = $('#docs'); if (!b) return; var have = {}; (list || []).forEach(function (d) { have[d.key + ':' + (d.page || 1)] = d; });
+  var b = $('#docs'); if (!b) return; var have = {}; (list || []).forEach(function (d) { have[d.key + ':' + (d.page || 1)] = d; }); cPut('d_' + p.Code, list || []);
   syncDocs(p, list);
   b.innerHTML = DOCS.map(function (d) {
     var h1 = have[d[0] + ':1'], h2 = have[d[0] + ':2'];
@@ -539,8 +690,8 @@ var LISTS = [['all', 'All Hujjaj'], ['family', 'Family-wise'], ['gender', 'Gende
 function activeP() { return (S.pilgrims || []).filter(function (p) { return p['Active (yes/no)'] !== 'no'; }); }
 function hasDoc(p, slot) { return (',' + (p.Documents || '') + ',').indexOf(',' + slot + ',') >= 0; }
 function recordsView(force) {
-  setHead('RECORDS'); spin(); S.recTab = S.recTab || 'docs';
-  getPilgrims(force === true).then(renderRecords).catch(fail);
+  setHead('RECORDS'); S.recTab = S.recTab || 'docs'; if (force === true || (!S.pilgrims && !cGet('p'))) spin();
+  getPilgrims(force === true).then(function () { if (S.tab === 'records' && S.view === 'records') renderRecords(); }).catch(fail);
 }
 function renderRecords() {
   var t = S.recTab, h = '<div class="chips"><button class="chip' + (t === 'docs' ? ' on' : '') + '" data-rt="docs">Documents</button><button class="chip' + (t === 'lists' ? ' on' : '') + '" data-rt="lists">Lists</button>' +
@@ -868,8 +1019,8 @@ function ymd(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + 
 function fmtDue(ms) { var d = new Date(ms), t = new Date(); t.setHours(0, 0, 0, 0); var dd = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - t) / 864e5);
   return (dd === 0 ? 'Today' : dd === 1 ? 'Tomorrow' : dd === -1 ? 'Yesterday' : d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })) + ', ' + d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }); }
 function tasksView() {
-  setHead('TASKS'); spin();
-  api('tasks').then(function (j) { if (!j.ok) throw new Error(j.err); S.tasks = j.list; S.calOk = j.cal; renderTasks(); }).catch(fail);
+  setHead('TASKS');
+  cachedLoad('t', 'tasks', function (j) { S.tasks = j.list; S.calOk = j.cal; }, renderTasks);
 }
 function renderTasks() {
   var L = S.tasks || [], now = Date.now(), t0 = new Date(); t0.setHours(0, 0, 0, 0); var t1 = t0.getTime() + 864e5;
@@ -887,6 +1038,7 @@ function renderTasks() {
     '<div style="color:var(--mute);font-size:12px;margin:8px 2px 0">Example: "Kal subah saade 9 baje Mina bus ke liye sab hajiyon ko call karna, Basil ko"</div>' +
     (over.length ? sec('<span style="color:var(--bad)">Overdue</span>', over, '') : '') + sec('Today', today, 'Nothing left for today ✓') + sec('Upcoming', later, 'No upcoming tasks') + (done.length ? sec('Done', done, '') : '');
   $('#micb').onclick = startVoice; $('#typb').onclick = function () { taskCard(null, ''); };
+  cPut('t', { ok: true, list: S.tasks, cal: S.calOk });
   document.querySelectorAll('[data-tdone]').forEach(function (b) { b.onclick = function () { var x = S.tasks.filter(function (k) { return k.id === b.dataset.tdone; })[0]; if (!x) return; b.disabled = true;
     api('doneTask', { data: { id: x.id, done: x.status !== 'done' } }).then(function (j) { if (!j.ok) throw new Error(); Object.assign(x, j.task); toast(x.status === 'done' ? 'Done ✓' : 'Opened again'); renderTasks(); })
       .catch(function () { b.disabled = false; toast('Not saved – check internet'); }); }; });
@@ -934,7 +1086,7 @@ function taskCard(x, spoken) {
 // Once a day, when the app opens: pop-up of today's and overdue tasks for this person.
 function tasksPopup() {
   var key = 'mz_tp_' + S.user + '_' + ymd(new Date()); try { if (localStorage.getItem(key)) return; } catch (e) {}
-  api('tasks').then(function (j) { if (!j.ok) return; S.tasks = j.list; S.calOk = j.cal;
+  api('tasks').then(function (j) { if (!j.ok) return; S.tasks = j.list; S.calOk = j.cal; cPut('t', j);
     var end = new Date(); end.setHours(23, 59, 59, 999);
     var mine = j.list.filter(function (x) { return x.status !== 'done' && x.due <= end.getTime() && (x.for === S.user || x.for === 'both'); }).sort(function (a, b) { return a.due - b.due; });
     if (!mine.length) return; try { localStorage.setItem(key, '1'); } catch (e) {}
@@ -986,15 +1138,25 @@ function hcView() {
   $('#hcadd').onclick = function () { var n = $('#hcn').value.trim(); if (!n) { toast('Write a name for the list'); return; }
     api('hcNew', { data: { name: n } }).then(function (j) { if (!j.ok) throw new Error(); S.hc = [j.item].concat(S.hc || []); hcOpen(j.item.id); }).catch(function () { toast('Not created – check internet'); }); };
   $('#hcprint').onclick = printBadges;
-  api('hcList').then(function (j) { S.hc = j.list || []; var b = $('#hcl'); if (!b) return;
+  var drawHc = function () { var b = $('#hcl'); if (!b || !S.hc) return;
     b.innerHTML = S.hc.length ? S.hc.map(function (x) { var c = hcCounts(x); return '<div class="card pl" data-hc="' + esc(x.id) + '"><div class="m"><div class="n">' + esc(x.name) + '</div><div class="s">' + c.here + ' of ' + c.total + ' present · ' + esc(hcPerTxt(c.per)) + '</div><div class="s">' + esc(x.on) + ' · ' + esc(NAMES[x.by] || x.by) + '</div></div><span style="color:var(--g2);font-size:22px">›</span></div>'; }).join('')
       : '<div class="empty">No headcount lists yet.</div>';
     document.querySelectorAll('[data-hc]').forEach(function (c) { c.onclick = function () { hcOpen(c.dataset.hc); }; });
-  }).catch(function () { $('#hcl').innerHTML = '<div class="empty">Could not load.</div>'; });
+  };
+  var ch = cGet('h'); if (ch) { S.hc = ch.list || []; drawHc(); }
+  getPilgrims().catch(function () {});
+  api('hcList').then(function (j) { if (!j.ok) throw new Error(); cPut('h', j); var same = ch && JSON.stringify(ch) === JSON.stringify(j); S.hc = hcMerge(j.list || []); if (!same && !S.hcOpenId) drawHc(); })
+    .catch(function () { if (!ch && $('#hcl')) $('#hcl').innerHTML = '<div class="empty">Could not load.</div>'; });
 }
 var BUSES = ['Bus 1', 'Bus 2', 'Bus 3', 'Airport'];
 function myBus(id) { var b = ''; try { b = localStorage.getItem('mz_bus_' + id) || ''; } catch (e) {} return b || (S.user === 'basil' ? 'Bus 2' : 'Bus 1'); }
 function setBus(id, b) { try { localStorage.setItem('mz_bus_' + id, b); } catch (e) {} }
+function hcMerge(list) {                     // fresh list from the Sheet, but keep the same objects so an open list never loses scans
+  var old = {}; (S.hc || []).forEach(function (h) { old[h.id] = h; });
+  return list.map(function (n) { var o = old[n.id]; if (!o) return n;
+    if (n.id === S.hcOpenId && (S.hcQ.length || S.hcBusy)) { o.name = n.name; return o; }
+    Object.keys(n).forEach(function (k) { o[k] = n[k]; }); return o; });
+}
 function hcApply(x, code, bus, on) {             // change the list on this phone at once (server saves in the background)
   x.buses = x.buses || {}; var was = x.buses[code];
   x.present = (x.present || []).filter(function (c) { return c !== code; }); delete x.buses[code];
@@ -1002,9 +1164,11 @@ function hcApply(x, code, bus, on) {             // change the list on this phon
   return was;
 }
 S.hcQ = [];
-function hcQueue(x, item) { S.hcQ.push(item); hcPump(x); }
+function hcQueue(x, item) { S.hcGen = (S.hcGen || 0) + 1; S.hcQ.push(item); hcPump(x); }
 function hcPump(x) {
-  if (S.hcBusy || !S.hcQ.length) { hcPend(); return; } S.hcBusy = true; hcPend();
+  if (S.hcBusy || !S.hcQ.length) { hcPend(); return; }
+  if (!S.hcSingle) return hcPumpMany(x);
+  S.hcBusy = true; hcPend();
   var it = S.hcQ[0];
   api('hcMark', { data: { id: x.id, code: it.code || '', badge: it.badge || '', bus: it.bus, present: it.on } }).then(function (j) {
     S.hcBusy = false;
@@ -1013,6 +1177,20 @@ function hcPump(x) {
     S.hcQ.forEach(function (q) { if (q.code) hcApply(x, q.code, q.bus, q.on); });          // keep scans that are still waiting
     hcRefreshUi(x); hcPump(x);
   }).catch(function () { S.hcBusy = false; hcPend(); setTimeout(function () { hcPump(x); }, 2000); });
+}
+function hcPumpMany(x) {                    // all waiting scans go to the Sheet in ONE call
+  S.hcBusy = true; hcPend();
+  var batch = S.hcQ.slice(0, 40);
+  api('hcMarkMany', { data: { id: x.id, items: batch.map(function (it) { return { code: it.code || '', badge: it.badge || '', bus: it.bus, on: it.on }; }) } }).then(function (j) {
+    S.hcBusy = false;
+    if (!j.ok && j.err === 'action') { S.hcSingle = true; hcPump(x); return; }          // Sheet not updated yet: one by one
+    if (!j.ok) { S.hcQ.splice(0, batch.length); toast('Not saved – list not found'); hcPump(x); return; }
+    S.hcQ.splice(0, batch.length);
+    (j.results || []).forEach(function (r) { if (r.err === 'code') toast('Badge not found – is that Haji turned off?'); });
+    x.present = j.present; x.buses = j.buses;
+    S.hcQ.forEach(function (q) { if (q.code) hcApply(x, q.code, q.bus, q.on); });
+    hcRefreshUi(x); hcPump(x);
+  }).catch(function () { S.hcBusy = false; hcPend(); setTimeout(function () { hcPump(x); }, 1500); });
 }
 function hcPend() { var n = S.hcQ.length, el = document.getElementById('scp'); if (el) el.textContent = n ? '⏳ ' + n + ' waiting to save…' : '✓ all saved'; var e2 = document.getElementById('hcpend'); if (e2) e2.textContent = n ? '⏳ ' + n + ' waiting to save' : ''; }
 function hcCounts(x) {
@@ -1057,10 +1235,11 @@ function hcOpen(id, keepScroll) {
   clearInterval(S.hcTimer);
   S.hcTimer = setInterval(function () {
     if (S.hcOpenId !== x.id || S.tab !== 'records' || document.hidden || S.hcQ.length || S.hcBusy) { if (S.hcOpenId !== x.id) clearInterval(S.hcTimer); return; }
-    api('hcGet', { data: { id: x.id } }).then(function (j) { if (!j.ok || S.hcQ.length || S.hcBusy) return;
+    var gen = S.hcGen || 0;   // a reply asked for before my latest scan is old news: ignore it
+    api('hcGet', { data: { id: x.id } }).then(function (j) { if (!j.ok || S.hcQ.length || S.hcBusy || (S.hcGen || 0) !== gen) return;
       var changed = (j.item.present || []).join(',') + JSON.stringify(j.item.buses) !== (x.present || []).join(',') + JSON.stringify(x.buses);
       if (changed) { x.present = j.item.present; x.buses = j.item.buses; hcRefreshUi(x); } }).catch(function () {});
-  }, 3000);
+  }, 2500);
 }
 function scanQR(x) {
   var bus = myBus(x.id), o = document.createElement('div'); o.className = 'scanov';
@@ -1079,22 +1258,25 @@ function scanQR(x) {
     if (!p) { say('Checking badge…'); hcQueue(x, { badge: m[1], bus: bus, on: true }); return; }
     var was = (x.buses || {})[p.Code];
     if ((x.present || []).indexOf(p.Code) >= 0 && was === bus) { say('✓ ' + esc(p.Name) + ' – already counted'); return; }
+    if (seen['c_' + p.Code] && was && was !== bus) { say('✓ ' + esc(p.Name) + ' – already scanned here, now on <b>' + esc(was) + '</b><br><small>Tap the name in the list to move back</small>'); return; }   // camera still sees a badge it already counted: never pull a Haji back from the other bus
+    seen['c_' + p.Code] = 1;
     hcApply(x, p.Code, bus, true); hcQueue(x, { code: p.Code, bus: bus, on: true });
     say('<span style="color:#7be3a2">✓ ' + esc(p.Name) + '</span>' + (was && was !== bus ? '<br><small style="color:#ffd27a">moved from ' + esc(was) + '</small>' : ''), true);
     recent.unshift(p.Name); recent = recent.slice(0, 3); $('#scr').textContent = 'Last: ' + recent.join(' · '); hcRefreshUi(x);
   };
   var loop = function () { if (stop) return;
     if (v.readyState >= 2 && v.videoWidth) {
-      if (det) { det.detect(v).then(function (r) { if (r && r[0]) found(r[0].rawValue); }).catch(function () {}).then(function () { setTimeout(loop, 90); }); return; }
+      if (det) { det.detect(v).then(function (r) { if (r && r[0]) found(r[0].rawValue); }).catch(function () {}).then(function () { setTimeout(loop, 40); }); return; }
       if (window.jsQR) { var s = Math.min(v.videoWidth, v.videoHeight) * 0.8, sx = (v.videoWidth - s) / 2, sy = (v.videoHeight - s) / 2, w = 360;   // centre square only = faster
         cv.width = cv.height = w; cx.drawImage(v, sx, sy, s, s, 0, 0, w, w);
         var r = window.jsQR(cx.getImageData(0, 0, w, w).data, w, w, { inversionAttempts: 'dontInvert' }); if (r) found(r.data); }
     }
-    setTimeout(loop, 110);
+    setTimeout(loop, 60);
   };
   var start = function () {
     navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false })
-      .then(function (s) { stream = s; v.srcObject = s; var pl = v.play(); if (pl && pl.catch) pl.catch(function () {}); loop(); })
+      .then(function (s) { stream = s; v.srcObject = s; var pl = v.play(); if (pl && pl.catch) pl.catch(function () {}); loop();
+        try { var tr = s.getVideoTracks()[0], cap = tr.getCapabilities ? tr.getCapabilities() : {}; if (cap.focusMode && cap.focusMode.indexOf('continuous') >= 0) tr.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(function () {}); } catch (e) {} })
       .catch(function () { say('Camera not allowed – allow the camera for this site, or tick names instead.'); });
   };
   if ('BarcodeDetector' in window) { try { det = new window.BarcodeDetector({ formats: ['qr_code'] }); } catch (e) { det = null; } }
@@ -1122,9 +1304,11 @@ var LEADER_PH_TXT = 'Basil Ayyubi +91 77689 39338';
 
 // ---------- alerts ----------
 function alertsView() {
-  setHead('ALERTS'); spin();
-  api('alerts').then(function (j) {
-    if (!j.ok) throw new Error(j.err); S.alerts = j.list;
+  setHead('ALERTS');
+  cachedLoad('a', 'alerts', function (j) { S.alerts = j.list; }, renderAlerts);
+}
+function renderAlerts() {
+  (function (j) {
     var names = {}; (S.pilgrims || []).forEach(function (p) { names[p.Code] = p.Name; });
     $('#main').innerHTML = '<button class="btn" id="newA">New alert</button><h2>Sent alerts</h2>' +
       (j.list.length ? j.list.map(function (a) {
@@ -1135,9 +1319,10 @@ function alertsView() {
       }).join('') : '<div class="empty">No alerts sent yet.</div>');
     $('#newA').onclick = function () { composeAlert('all'); };
     document.querySelectorAll('[data-r]').forEach(function (b) {
-      b.onclick = function () { b.disabled = true; api('hideAlert', { data: { row: +b.dataset.r, show: b.dataset.s } }).then(function () { toast(b.dataset.s === 'yes' ? 'Shown to pilgrims' : 'Hidden from pilgrims'); alertsView(); }).catch(function () { b.disabled = false; toast('Not saved'); }); };
+      b.onclick = function () { b.disabled = true; api('hideAlert', { data: { row: +b.dataset.r, show: b.dataset.s } }).then(function () { toast(b.dataset.s === 'yes' ? 'Shown to pilgrims' : 'Hidden from pilgrims');
+        S.alerts.forEach(function (a) { if (a.row === +b.dataset.r) a.show = b.dataset.s; }); cPut('a', { ok: true, list: S.alerts }); renderAlerts(); }).catch(function () { b.disabled = false; toast('Not saved'); }); };
     });
-  }).catch(fail);
+  })({ list: S.alerts });
 }
 function composeAlert(to) {
   $('#fab').classList.add('hide');
@@ -1154,7 +1339,7 @@ function composeAlert(to) {
       var d = { to: $('#aTo').value, title: $('#aT').value.trim(), text: $('#aX').value.trim() }, b = this;
       if (!d.text) { $('#aErr').textContent = 'Write the message.'; return; }
       b.disabled = true; b.textContent = 'Sending & translating…';
-      api('sendAlert', { data: d }).then(function (j) { if (!j.ok) throw new Error(); toast('Alert sent'); go('alerts'); })
+      api('sendAlert', { data: d }).then(function (j) { if (!j.ok) throw new Error(); toast('Alert sent'); try { localStorage.removeItem(cKey('a')); } catch (e) {} go('alerts'); })
         .catch(function () { $('#aErr').textContent = 'Not sent – check internet.'; b.disabled = false; b.textContent = 'Send alert'; });
     };
   }).catch(fail);
@@ -1162,8 +1347,8 @@ function composeAlert(to) {
 
 // ---------- leads ----------
 function leadsView() {
-  setHead('LEADS'); spin();
-  api('leads').then(function (j) { if (!j.ok) throw new Error(j.err); S.leads = j.list; renderLeads(); }).catch(fail);
+  setHead('LEADS');
+  cachedLoad('l', 'leads', function (j) { S.leads = j.list; }, renderLeads);
 }
 function renderLeads() {
   var f = S.leadFilter, list = S.leads.filter(function (l) { return f === 'all' || (l.Status || 'New') === f; });
@@ -1285,7 +1470,14 @@ function demoApi(b) {
   if (DEMO) $('#demoBar').classList.remove('hide');
   var s = load();
   if (s && s.token) { S.user = s.user; S.token = s.token; startApp(); } else showLogin();
-  if ('serviceWorker' in navigator && !DEMO) navigator.serviceWorker.register('sw.js').catch(function () {});
+  if ('serviceWorker' in navigator && !DEMO) {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+    navigator.serviceWorker.addEventListener('message', function (e) {      // a newer version was saved in the background
+      if (!e.data || e.data.type !== 'updated' || $('#updbar')) return;
+      var b = document.createElement('button'); b.id = 'updbar'; b.textContent = '✨ New version ready – tap to update'; b.onclick = function () { location.reload(); };
+      document.body.appendChild(b);
+    });
+  }
 })();
 </script>
 </body>
