@@ -1,6 +1,6 @@
 // MEEZAB CORE - the real code of the "Meezab leads" Sheet. Loaded automatically by the small loader in the Sheet
 // (Meezab-loader.gs). To update the Sheet, publish a new version of this file on GitHub and raise VERSION. Nothing to paste.
-var VERSION = '6.9';
+var VERSION = '6.10';
 // New in 6.9: app stats for the admin app – Online now, Installed, Visitors today (tabs "App installs", "App visits").
 // New in 6.8: faster – many headcount scans saved in one call (hcMarkMany); read-only lists no longer wait in the queue.
 // MEEZAB E RAHEMAT - leads, feedback, news, My Hajj and the Admin meezab app in one Google Sheet.   (version 6.2, 10 Nov 2026)
@@ -237,7 +237,32 @@ function doPost(e) {
 
 // Opening the web-app link in a browser shows "Meezab leads link is working (v6)".
 // The app calls ...?action=news to get the news rows that are approved (Show = yes, or empty for old rows).
+// 6.10: the pilgrim app's "Live from Makkah" tile asks ...?action=live for the current live video of
+// KSA Qur'an TV. Found automatically from YouTube, checked at most every 20 minutes for all phones together.
+var LIVE_CHANNEL = 'UCos52azQNBgW63_9uDJoPDA';
+function liveId_() {
+  var c = CacheService.getScriptCache(), v = c.get('live_id');
+  if (v !== null) return v;
+  var P = PropertiesService.getScriptProperties(), id = '';
+  try {
+    var r = UrlFetchApp.fetch('https://www.youtube.com/channel/' + LIVE_CHANNEL + '/live',
+      { muteHttpExceptions: true, followRedirects: true, headers: { 'Accept-Language': 'en' } });
+    if (r.getResponseCode() === 200) {
+      var t = r.getContentText();
+      var m = /<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([A-Za-z0-9_-]{11})"/.exec(t);
+      if (m && /"isLiveNow":true|"isLive":true/.test(t)) id = m[1];
+    }
+  } catch (x) {}
+  if (id) P.setProperty('live_id', id); else id = P.getProperty('live_id') || '';   // keep the last good one
+  c.put('live_id', id, 1200);
+  return id;
+}
+
 function doGet(e) {
+  if (e && e.parameter && e.parameter.action === 'live') {
+    var lid = ''; try { lid = liveId_(); } catch (x) {}
+    return ContentService.createTextOutput(JSON.stringify({ id: lid })).setMimeType(ContentService.MimeType.JSON);
+  }
   if (!e || !e.parameter || e.parameter.action !== 'news') return out_('Meezab leads link is working (v' + VERSION + ')');
   var sh = SpreadsheetApp.getActive().getSheetByName('News');
   var list = [];
