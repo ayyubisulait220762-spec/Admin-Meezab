@@ -1,6 +1,6 @@
 // Admin meezab service worker: the app opens at once from the phone's saved copy; a newer version is fetched quietly
 // in the background and the page is told, so it can offer "Update". Data always comes live from the Sheet.
-var V = 'admin-meezab-v4';
+var V = 'admin-meezab-v5';
 var FILES = ['./', 'index.html', 'manifest.json', 'icon-192.png', 'icon-512.png', 'qrcode.min.js', 'jsQR.min.js'];
 self.addEventListener('install', function (e) { e.waitUntil(caches.open(V).then(function (c) { return c.addAll(FILES); })); self.skipWaiting(); });
 self.addEventListener('activate', function (e) {

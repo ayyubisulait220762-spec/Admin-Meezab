@@ -1,6 +1,7 @@
 // MEEZAB CORE - the real code of the "Meezab leads" Sheet. Loaded automatically by the small loader in the Sheet
 // (Meezab-loader.gs). To update the Sheet, publish a new version of this file on GitHub and raise VERSION. Nothing to paste.
-var VERSION = '6.8';
+var VERSION = '6.9';
+// New in 6.9: app stats for the admin app – Online now, Installed, Visitors today (tabs "App installs", "App visits").
 // New in 6.8: faster – many headcount scans saved in one call (hcMarkMany); read-only lists no longer wait in the queue.
 // MEEZAB E RAHEMAT - leads, feedback, news, My Hajj and the Admin meezab app in one Google Sheet.   (version 6.2, 10 Nov 2026)
 // New in 6.2: runs through the self-updating loader (no more copy-paste in the Sheet).
@@ -170,7 +171,7 @@ function doPost(e) {
   try { d = JSON.parse(e && e.postData && e.postData.contents || ''); } catch (x) { return out_('bad request'); }
   if (!d || typeof d !== 'object') return out_('bad request');
   // big files, text reading and read-only lists skip the queue (6.8: lists too, so two phones never wait for each other)
-  if (d.type === 'myhajjdoc' || (d.type === 'admin' && /^(inboxAdd|getInbox|getDoc|hcGet|hcList|alerts|leads|tasks|docs|inbox)$/.test(String(d.action)))) {
+  if (d.type === 'myhajjdoc' || (d.type === 'admin' && /^(inboxAdd|getInbox|getDoc|hcGet|hcList|alerts|leads|tasks|docs|inbox|appStats)$/.test(String(d.action)))) {
     try { return json_(d.type === 'myhajjdoc' ? myHajjDoc_(d) : admin_(d)); }       // big files / text reading: no queue for others
     catch (x) { return json_({ ok: false, err: 'error' }); }
   }
@@ -181,6 +182,7 @@ function doPost(e) {
     catch (x) { return json_({ ok: false, err: 'error' }); }
     finally { lk.releaseLock(); }
   }
+  if (d.type === 'stat') { try { return out_(stat_(d)); } catch (x) { return out_('ok'); } }   // 6.9: online / installs / visitors
   if (robot_(d)) return out_('ok'); // pretend ok, save nothing
 
   var lock = LockService.getScriptLock();
@@ -559,6 +561,7 @@ function admin_(d) {
         var o = { row: i + 2 }; LEAD_HEAD.forEach(function (h, j) { o[h] = str_(r[j]); }); return o; });
       return { ok: true, list: leads.reverse().slice(0, 200) };
     }
+    case 'appStats': return appStats_(ss);                     // 6.9: Online now / Installed / Visitors today
     case 'leadStatus': {
       var lsh = ss.getSheetByName('Leads'), lr = parseInt(data.row, 10);
       if (lsh && lr >= 2 && lr <= lsh.getLastRow()) {
@@ -1067,4 +1070,57 @@ function hcObj_(r) {
   var buses = {}, present = [];
   String(r[4] || '').split(',').filter(Boolean).forEach(function (e) { var p = e.split('~'); present.push(p[0]); buses[p[0]] = p[1] || ''; });
   return { id: String(r[0]), name: String(r[1]), by: String(r[2]), on: str_(r[3]), present: present, buses: buses, upd: str_(r[5]) };
+}
+
+// ======================= APP STATS (6.9) =======================
+// The pilgrim app sends a small "ping" every 2 minutes while it is open, and one "install" note per phone.
+// Online now = phones that pinged in the last 3 minutes (kept only in the script cache, nothing written).
+// Installs and daily visitors are kept in the tabs "App installs" and "App visits".
+var INST_HEAD = ['Time', 'Device', 'Phone', 'How'];
+var VISIT_HEAD = ['Date', 'Device', 'Phone', 'Opened as app'];
+function statDay_(t) { return Utilities.formatDate(t || new Date(), 'Asia/Kolkata', 'yyyy-MM-dd'); }
+function stat_(d) {
+  var id = String(d.dev || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 24);
+  if (id.length < 8 || (d.ev !== 'ping' && d.ev !== 'install')) return 'ok';
+  var os = /^(android|iphone|other)$/.test(d.os) ? d.os : 'other';
+  var c = CacheService.getScriptCache(), min = Math.floor(Date.now() / 60000), day = statDay_();
+  var lk = null; try { lk = LockService.getDocumentLock(); } catch (x) {}
+  if (lk && !lk.tryLock(4000)) return 'ok';                    // very busy: skip this one, the next ping counts
+  try {
+    var k = 'on_' + min, on = {}; try { on = JSON.parse(c.get(k) || '{}'); } catch (x) {}
+    if (!on[id]) { on[id] = 1; c.put(k, JSON.stringify(on), 300); }
+    var ss = SpreadsheetApp.getActive();
+    if (!c.get('vd_' + day + '_' + id)) {                      // first visit today from this phone
+      c.put('vd_' + day + '_' + id, '1', 21600);
+      sheet_(ss, 'App visits', VISIT_HEAD).appendRow(["'" + day, id, os, d.app ? 'yes' : '']);
+    }
+    if (d.ev === 'install' && !c.get('in_' + id)) {
+      c.put('in_' + id, '1', 21600);
+      var sh = sheet_(ss, 'App installs', INST_HEAD), last = sh.getLastRow(), have = false;
+      if (last > 1) have = sh.getRange(2, 2, last - 1, 1).getValues().some(function (r) { return String(r[0]) === id; });
+      if (!have) sh.appendRow([new Date(), id, os, d.how === 'installed' ? 'Installed' : 'Opened from home screen']);
+    }
+  } finally { if (lk) lk.releaseLock(); }
+  return 'ok';
+}
+function appStats_(ss) {
+  var c = CacheService.getScriptCache(), min = Math.floor(Date.now() / 60000), on = {};
+  for (var m = min - 2; m <= min; m++) { try { var o = JSON.parse(c.get('on_' + m) || '{}'); for (var k in o) on[k] = 1; } catch (x) {} }
+  var day = statDay_(), inst = { total: 0, today: 0, android: 0, iphone: 0, other: 0 }, vis = {};
+  var ish = ss.getSheetByName('App installs'), il = ish ? ish.getLastRow() : 0;
+  if (il > 1) ish.getRange(2, 1, il - 1, 3).getValues().forEach(function (r) {
+    if (!r[1]) return;
+    inst.total++; inst[r[2] === 'android' || r[2] === 'iphone' ? r[2] : 'other']++;
+    if (r[0] instanceof Date && statDay_(r[0]) === day) inst.today++;
+  });
+  var vsh = ss.getSheetByName('App visits'), vl = vsh ? vsh.getLastRow() : 0;
+  for (var end = vl; end > 1; end -= 500) {                       // read today's rows from the bottom up
+    var from = Math.max(2, end - 499), rows = vsh.getRange(from, 1, end - from + 1, 2).getValues(), older = false;
+    for (var i = rows.length - 1; i >= 0; i--) {
+      var dv = rows[i][0] instanceof Date ? statDay_(rows[i][0]) : String(rows[i][0]);
+      if (dv === day) vis[rows[i][1]] = 1; else { older = true; break; }
+    }
+    if (older) break;
+  }
+  return { ok: true, online: Object.keys(on).length, installs: inst, visitorsToday: Object.keys(vis).length };
 }
